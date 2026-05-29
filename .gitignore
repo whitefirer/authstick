@@ -1,0 +1,26 @@
+# Firmware build artifacts
+firmware/build/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/dependencies.lock
+
+# Merged binary
+authstick-merged.bin
+*.bin
+
+# Python
+__pycache__/
+*.pyc
+server/devices.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

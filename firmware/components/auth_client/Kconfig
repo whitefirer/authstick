@@ -1,0 +1,17 @@
+menu "AuthStick Client"
+
+config AUTH_SERVER_URL
+    string "Auth server URL"
+    default "http://192.168.1.100:8998"
+    help
+        Base URL of the xiaozhi-auth-mcp server.
+        Format: http://<host>:<port>
+
+config AUTH_POLL_INTERVAL_MS
+    int "Poll interval (ms)"
+    default 3000
+    range 1000 30000
+    help
+        How often to poll the server for pending auth codes.
+
+endmenu

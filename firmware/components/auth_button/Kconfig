@@ -1,0 +1,15 @@
+menu "AuthStick Button"
+
+config BTN_A_PIN
+    int "Button A (front) GPIO"
+    default 0
+
+config BTN_B_PIN
+    int "Button B (side) GPIO"
+    default 41
+
+config BTN_LONG_PRESS_MS
+    int "Long press threshold (ms)"
+    default 1000
+
+endmenu

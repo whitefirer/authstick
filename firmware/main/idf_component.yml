@@ -1,0 +1,7 @@
+dependencies:
+  78/esp-wifi-connect: ~3.1.4
+  78/esp-ml307: ~3.6.5
+  lvgl/lvgl: ~9.5.0
+  esp_lvgl_port: ~2.7.2
+  78/xiaozhi-fonts: ~1.6.0
+  idf: '>=5.3'

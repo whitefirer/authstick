@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="AuthStick — ESP32 认证终端。每台设备独立 MAC 地址，验证码精准送达，物理按键审批。">
+<title>AuthStick — 独立认证终端</title>
+<style>
+:root {
+  --bg: #0a0a10;
+  --panel: #13131f;
+  --card: #1a1a2c;
+  --border: #1f1f38;
+  --ink: #e4e4ee;
+  --muted: #7c7c94;
+  --accent: #e94560;
+  --accent-glow: #ff6b81;
+  --green: #3ecf8e;
+  --log-bg: #06060c;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{-webkit-font-smoothing:antialiased}
+
+/* ── topbar ─────────────────────── */
+.topbar{
+  position:sticky;top:0;z-index:10;
+  padding:14px clamp(20px,5vw,64px);
+  border-bottom:1px solid var(--border);
+  background:#0a0a10e0;backdrop-filter:blur(12px);
+}
+.topbar-inner{
+  width:min(100%,1120px);margin:0 auto;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px}
+.brand-dot{width:10px;height:10px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 8px var(--accent-glow)}
+.topbar nav{display:flex;gap:24px;font-size:14px}
+.topbar nav a{color:var(--muted);text-decoration:none;transition:color .2s}
+.topbar nav a:hover{color:var(--ink)}
+
+/* ── sections ────────────────────── */
+.section-inner{
+  width:min(100%,1120px);margin:0 auto;
+  padding-left:clamp(20px,4vw,40px);
+  padding-right:clamp(20px,4vw,40px);
+}
+
+/* hero */
+.hero{
+  padding:clamp(60px,10vw,120px) 0 clamp(40px,6vw,80px);
+  text-align:center;
+}
+.hero-badge{
+  display:inline-block;padding:5px 14px;border:1px solid var(--border);
+  border-radius:99px;font-size:13px;color:var(--accent);margin-bottom:24px;
+  letter-spacing:.5px;
+}
+.hero h1{
+  font-size:clamp(40px,8vw,80px);line-height:1.05;letter-spacing:-1px;
+  max-width:900px;margin:0 auto;
+}
+.hero h1 em{font-style:normal;color:var(--accent)}
+.hero .lead{
+  max-width:600px;margin:20px auto 0;
+  color:var(--muted);font-size:clamp(17px,2vw,20px);line-height:1.6;
+}
+
+/* problem */
+.problem{
+  padding:clamp(40px,6vw,80px) 0;
+  border-top:1px solid var(--border);
+}
+.problem h2,.flow h2,.features h2{
+  text-align:center;font-size:clamp(24px,3vw,36px);
+  margin-bottom:clamp(24px,4vw,48px);letter-spacing:-.5px;
+}
+.problem-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));
+  gap:clamp(16px,3vw,28px);
+}
+.problem-card{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:10px;padding:clamp(20px,3vw,28px);
+}
+.problem-card .label{
+  font-size:13px;color:var(--accent);font-weight:600;
+  text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;
+}
+.problem-card h3{font-size:18px;margin-bottom:8px}
+.problem-card p{color:var(--muted);font-size:15px;line-height:1.65}
+
+/* flow */
+.flow{padding:clamp(40px,6vw,80px) 0;border-top:1px solid var(--border)}
+.flow-steps{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));
+  gap:clamp(20px,3vw,40px);
+  counter-reset:step;
+}
+.flow-step{
+  position:relative;text-align:center;padding:clamp(20px,3vw,28px);
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+}
+.flow-step::before{
+  counter-increment:step;content:counter(step);
+  display:inline-flex;width:40px;height:40px;border-radius:50%;
+  background:var(--accent);color:#fff;font-weight:700;font-size:18px;
+  align-items:center;justify-content:center;margin-bottom:16px;
+}
+.flow-step h3{font-size:17px;margin-bottom:6px}
+.flow-step p{color:var(--muted);font-size:14px;line-height:1.6}
+
+/* features */
+.features{padding:clamp(40px,6vw,80px) 0;border-top:1px solid var(--border)}
+.features-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));
+  gap:clamp(16px,3vw,28px);
+}
+.feature-card{
+  padding:clamp(20px,3vw,28px);
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+}
+.feature-card .icon{font-size:24px;margin-bottom:12px}
+.feature-card h3{font-size:16px;margin-bottom:6px}
+.feature-card p{color:var(--muted);font-size:14px;line-height:1.6}
+
+/* flasher */
+.flasher{
+  padding:clamp(40px,6vw,80px) 0;
+  border-top:1px solid var(--border);
+  background:var(--panel);
+}
+.flasher-grid{
+  display:grid;
+  grid-template-columns:minmax(280px,.9fr) minmax(340px,1.1fr);
+  gap:clamp(24px,5vw,60px);align-items:start;
+}
+.flasher-copy .eyebrow{
+  font-size:13px;color:var(--accent);font-weight:600;
+  text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;
+}
+.flasher-copy h2{font-size:clamp(24px,3vw,36px);letter-spacing:-.5px;text-align:left}
+.flasher-copy>p{
+  margin-top:16px;color:var(--muted);font-size:16px;line-height:1.65;
+}
+.flasher-steps{
+  list-style:none;margin-top:20px;padding:0;
+  color:var(--ink);font-size:15px;line-height:1.8;
+}
+.flasher-steps li::before{content:"› ";color:var(--accent);font-weight:700}
+.flasher-panel{
+  padding:clamp(16px,3vw,24px);
+  border:1px solid var(--border);border-radius:10px;
+  background:var(--card);
+}
+.flasher-meta{
+  display:flex;justify-content:space-between;gap:12px;
+  font-size:14px;font-weight:600;
+}
+.flasher-meta span:last-child{color:var(--muted);text-align:right}
+button{
+  font:inherit;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:38px;padding:0 18px;border-radius:7px;font-size:14px;
+  font-weight:600;border:1px solid var(--border);
+  color:var(--ink);background:var(--card);
+  transition:background .15s,border-color .15s;
+}
+button:hover:not(:disabled){border-color:var(--accent)}
+button.primary{color:#fff;background:var(--accent);border-color:var(--accent)}
+button.primary:hover:not(:disabled){background:var(--accent-glow)}
+button.secondary{color:var(--ink);background:#252538;border:1px solid #3a3a55}
+button.secondary:hover:not(:disabled){background:#303050;border-color:#555}
+button:disabled{opacity:.4;cursor:not-allowed}
+.flasher-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+.progress-track{
+  width:100%;height:8px;margin-top:14px;overflow:hidden;
+  border-radius:99px;background:#2a2a3e;
+  border:1px solid #3a3a55;
+}
+.progress-track .fill{
+  display:block;width:0;height:100%;border-radius:inherit;
+  background:var(--accent);transition:width .3s ease;
+}
+.progress-label{font-size:12px;color:var(--muted);margin-top:4px;text-align:right}
+.dl-link{font-size:13px;color:var(--accent);
+  cursor:pointer;text-decoration:underline}
+.flash-log{
+  min-height:130px;max-height:200px;margin-top:14px;padding:12px;
+  overflow:auto;border:1px solid var(--border);border-radius:8px;
+  color:#a0b8d0;background:var(--log-bg);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12px;line-height:1.55;
+}
+.flash-log .ok{color:var(--green)}
+.flash-log .err{color:var(--accent)}
+.browser-note{margin-top:12px;color:var(--muted);font-size:12px}
+
+/* footer */
+footer{
+  padding:24px 0;border-top:1px solid var(--border);
+  color:var(--muted);font-size:13px;text-align:center;
+}
+footer a{color:var(--accent);text-decoration:none}
+footer a:hover{text-decoration:underline}
+
+@media(max-width:820px){
+  .flasher-grid{grid-template-columns:1fr}
+}
+@media(max-width:520px){
+  .topbar-inner{flex-direction:column;gap:10px;align-items:flex-start}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>AuthStick</div>
+    <nav>
+      <a href="#problem">痛点</a>
+      <a href="#flow">流程</a>
+      <a href="#flasher">烧录</a>
+      <a href="https://github.com/whitefire/authstick" target="_blank">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<!-- ── hero ───────────────────────── -->
+<section class="hero">
+  <div class="section-inner">
+    <span class="hero-badge">M5Stack StickS3 · ESP32-S3</span>
+    <h1>每台设备独立 MAC 地址<br><em>验证码精准送达，物理按键审批</em></h1>
+    <p class="lead">
+      打开登录页的瞬间，服务器根据设备 MAC 地址将验证码推送到你的 StickS3 屏幕。
+      按下正面按钮批准、侧面按钮拒绝——不走语音、不需输入，
+      代码出现在对的设备上。
+    </p>
+  </div>
+</section>
+
+<!-- ── problem ────────────────────── -->
+<section class="problem" id="problem">
+  <div class="section-inner">
+    <h2>传统认证的三大痛点</h2>
+    <div class="problem-grid">
+      <div class="problem-card">
+        <div class="label">TTS 泄露</div>
+        <h3>语音念出验证码</h3>
+        <p>语音助手通过 TTS 播报验证码，周围任何人都能听到。配合屏幕显示的验证流程被语音通道彻底打破。</p>
+      </div>
+      <div class="problem-card">
+        <div class="label">操作繁琐</div>
+        <h3>切窗口手动输入</h3>
+        <p>看到验证码 → 记住 → 切回网页 → 输入。6 位码来回切换三次，流程断裂、易输错。</p>
+      </div>
+      <div class="problem-card">
+        <div class="label">设备混用</div>
+        <h3>多设备无隔离</h3>
+        <p>多个终端共享同一套认证系统时，验证码出现在谁的屏幕上？没有设备级身份，审批来源不可追溯。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── flow ───────────────────────── -->
+<section class="flow" id="flow">
+  <div class="section-inner">
+    <h2>三步完成认证</h2>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <h3>网页生成验证码</h3>
+        <p>用户打开登录页面，AuthStick 服务端生成 4 位数字验证码并存入待审批池。</p>
+      </div>
+      <div class="flow-step">
+        <h3>Stick 轮询拉取</h3>
+        <p>StickS3 每 3 秒轮询服务端，带上自己的 MAC 地址。服务端返回当前待审批的验证码到对应设备屏幕。</p>
+      </div>
+      <div class="flow-step">
+        <h3>按键审批 · 即时跳转</h3>
+        <p>正面按键批准 · 侧面按键拒绝。按下瞬间服务端签发 session，网页自动跳转登录。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── features ───────────────────── -->
+<section class="features">
+  <div class="section-inner">
+    <h2>不止于审批</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="icon">🛡️</div>
+        <h3>设备注册机制</h3>
+        <p>首次使用需在管理后台输入 6 位验证码绑定设备 MAC，未注册设备无法审批，物理地址天然防冒用。</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">📡</div>
+        <h3>WiFi 扫码配网</h3>
+        <p>首次开机自动开启热点，手机连接即可在网页中配置 WiFi 和服务器地址。无需编译、无需串口。</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">⚡</div>
+        <h3>实时倒计时</h3>
+        <p>验证码 5 分钟有效，屏幕实时倒计时。超时自动刷新，过期码无法审批。</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🔌</div>
+        <h3>独立认证服务</h3>
+        <p>内置完整 HTTP 服务器，不依赖任何第三方。任何网页接入 3 个 API 即可对接认证。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── flasher ────────────────────── -->
+<section class="flasher" id="flasher">
+  <div class="section-inner">
+    <div class="flasher-grid">
+      <div class="flasher-copy">
+        <div class="eyebrow">在线烧录</div>
+        <h2>浏览器一键烧录<br>无需安装任何工具</h2>
+        <p>使用 Web Serial API 通过 USB 直接烧录固件到 StickS3。仅需 Chrome 或 Edge 浏览器。</p>
+        <ol class="flasher-steps">
+          <li>用 USB-C 连接 StickS3 和电脑。</li>
+          <li>如果连接失败，按住侧边复位键直到内部绿色 LED 闪烁，再松开。</li>
+          <li>点击开始烧录，选择 StickS3 的 USB 串口。</li>
+        </ol>
+      </div>
+      <div class="flasher-panel">
+        <div class="flasher-meta">
+          <span id="statusText">准备就绪</span>
+          <span id="fwInfo">ESP32-S3 · StickS3</span>
+        </div>
+        <div class="progress-track"><span class="fill" id="pbar"></span></div>
+        <div class="progress-label" id="progressLabel"></div>
+        <div class="flasher-actions">
+          <button id="flashBtn" onclick="doFlash()" class="primary" disabled>加载中...</button>
+          <button onclick="downloadFw()" class="secondary">下载固件</button>
+        </div>
+        <input type="file" id="fwFile" accept=".bin" style="display:none" onchange="onLocalFile(event)">
+        <div class="flash-log" id="log"><div style="color:#a0b8d0">日志会显示在这里。</div></div>
+        <p class="browser-note">仅支持 Chrome / Edge 浏览器（需要 Web Serial API）</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="section-inner">
+    AuthStick · M5Stack StickS3 · ESP32-S3 · <a href="https://github.com/whitefire/authstick" target="_blank">GitHub</a>
+  </div>
+</footer>
+
+<script type="module">
+import { ESPLoader, Transport } from
+  'https://unpkg.com/esptool-js@0.6.0/bundle.js';
+
+const FW_URL = 'authstick-merged.bin?v=' + Date.now();
+let device, transport, fwData, fwReady = false;
+
+let logFirst = true;
+function log(msg, cls) {
+  const el = document.getElementById('log');
+  if (logFirst) { el.innerHTML = ''; logFirst = false; }
+  const div = document.createElement('div');
+  div.textContent = msg;
+  if (cls) div.className = cls;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setProgress(pct, label) {
+  document.getElementById('pbar').style.width = pct + '%';
+  if (label) document.getElementById('progressLabel').textContent = label;
+}
+
+// Preload merged firmware
+(async () => {
+  try {
+    const resp = await fetch(FW_URL);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    fwData = await resp.arrayBuffer();
+    fwReady = true;
+    document.getElementById('fwInfo').textContent =
+      'ESP32-S3 · StickS3 · ' + (fwData.byteLength/1024).toFixed(0) + ' KB';
+    document.getElementById('flashBtn').disabled = false;
+    document.getElementById('flashBtn').textContent = '开始烧录';
+  } catch(e) {
+    document.getElementById('fwInfo').textContent = '加载失败，请手动下载';
+    log('固件加载失败: ' + e.message, 'err');
+    document.getElementById('flashBtn').disabled = false;
+    document.getElementById('flashBtn').textContent = '开始烧录';
+  }
+})();
+
+// Fallback: manual download
+window.downloadFw = function() {
+  const a = document.createElement('a');
+  a.href = FW_URL; a.download = 'authstick-merged.bin'; a.click();
+};
+
+// Fallback: select local file
+window.selectLocalFw = function() {
+  document.getElementById('fwFile').click();
+};
+
+window.onLocalFile = async function(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  fwData = await f.arrayBuffer();
+  fwReady = true;
+  document.getElementById('fwInfo').textContent =
+    f.name + ' (' + (fwData.byteLength/1024).toFixed(0) + ' KB)';
+  log('已加载本地固件: ' + f.name, 'ok');
+};
+
+// Combined: connect then flash
+window.doFlash = async function() {
+  if (!fwReady || !fwData) { log('固件尚未加载', 'err'); return; }
+
+  const btn = document.getElementById('flashBtn');
+  btn.disabled = true;
+  btn.textContent = '正在连接...';
+  document.getElementById('statusText').textContent = '正在连接';
+
+  // Step 1: close old connection if any
+  if (device) {
+    try { await transport?.disconnect(); } catch(e) {}
+    try { await device.close(); } catch(e) {}
+    await new Promise(r => setTimeout(r, 500));
+    device = null; transport = null;
+  }
+
+  // Step 2: request port and let esptool manage it
+  try {
+    log('正在连接设备...');
+    device = await navigator.serial.requestPort();
+    transport = new Transport(device);
+    log('设备已连接', 'ok');
+  } catch(e) {
+    log('连接失败: ' + e.message, 'err');
+    btn.disabled = false;
+    btn.textContent = '开始烧录';
+    document.getElementById('statusText').textContent = '准备就绪';
+    return;
+  }
+
+  // Step 3: flash
+  btn.textContent = '烧录中...';
+  document.getElementById('statusText').textContent = '烧录中';
+  setProgress(0, '正在初始化...');
+
+  let esploader;
+  try {
+    const terminal = {
+      clean() {},
+      writeLine(data) { log(data); },
+      write(data) { log(data); },
+    };
+
+    esploader = new ESPLoader({
+      transport, baudrate: 115200, terminal,
+    });
+
+    setProgress(5, '正在连接芯片...');
+    const chip = await esploader.main();
+    log('芯片: ' + chip, 'ok');
+    log('固件大小：' + (fwData.byteLength/1024).toFixed(0) + ' KB');
+
+    await esploader.writeFlash({
+      fileArray: [{ address: 0x0, data: new Uint8Array(fwData) }],
+      flashSize: '8MB',
+      eraseAll: true,
+      compress: true,
+      reportProgress: (fileIndex, written, total) => {
+        const pct = Math.round((written / total) * 100);
+        setProgress(pct, '正在写入...');
+      },
+    });
+
+    setProgress(100, '烧录完成');
+    document.getElementById('statusText').textContent = '烧录完成';
+    log('烧录完成', 'ok');
+
+    // Hardware reset via DTR/RTS (matching voicestick: D0|R1|W100|R0|W500|D0)
+    await esploader.after('custom_reset', undefined, 'D0|R1|W100|R0|W500|D0');
+    log('已发送复位信号，设备即将重启...', 'ok');
+  } catch(e) {
+    log('烧录失败: ' + e.message, 'err');
+    setProgress(0, '');
+    document.getElementById('statusText').textContent = '烧录失败';
+  }
+
+  // Cleanup
+  try { await transport?.disconnect(); } catch(e) {}
+  try { await device?.close(); } catch(e) {}
+  device = null; transport = null;
+
+  btn.disabled = false;
+  btn.textContent = '开始烧录';
+};
+</script>
+</body>
+</html>

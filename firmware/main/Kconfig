@@ -1,0 +1,5 @@
+menu "AuthStick WiFi"
+
+# WiFi config is now done via provisioning web page; these are fallback defaults.
+
+endmenu

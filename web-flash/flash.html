@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AuthStick 固件烧录</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#1a1a2e;color:#e0e0e0;
+  display:flex;justify-content:center;align-items:center;min-height:100vh}
+.panel{background:#16213e;border-radius:12px;padding:2rem;width:100%;max-width:480px}
+h1{color:#e94560;margin-bottom:.5rem;font-size:1.5rem}
+p.sub{color:#889;font-size:.85rem;margin-bottom:1.5rem}
+.step{background:#0f3460;border-radius:8px;padding:1rem;margin-bottom:1rem}
+.step h2{font-size:1rem;color:#e94560;margin-bottom:.5rem}
+.step p{font-size:.85rem;color:#aab}
+button{background:#e94560;color:#fff;border:none;padding:10px 20px;
+  border-radius:6px;font-size:1rem;cursor:pointer;width:100%;margin:4px 0}
+button:disabled{background:#333;color:#666;cursor:not-allowed}
+#log{background:#0a0a14;border-radius:6px;padding:10px;margin-top:1rem;
+  font-family:monospace;font-size:.8rem;max-height:200px;overflow-y:auto;
+  white-space:pre-wrap;word-break:break-all}
+.progress{height:6px;background:#333;border-radius:3px;margin:1rem 0;overflow:hidden}
+.progress-bar{height:100%;background:#e94560;width:0%;transition:width .3s}
+</style>
+</head>
+<body>
+<div class="panel">
+  <h1>AuthStick 固件烧录</h1>
+  <p class="sub">通过浏览器 USB 直接烧录，无需安装任何软件</p>
+
+  <div class="step">
+    <h2>1. 进入烧录模式</h2>
+    <p>按住 StickS3 正面的 BOOT 按钮，同时插入 USB 线，然后松开按钮。</p>
+  </div>
+
+  <div class="step">
+    <h2>2. 连接设备</h2>
+    <button id="connectBtn" onclick="doConnect()">连接 USB 设备</button>
+    <p id="deviceInfo" style="margin-top:8px"></p>
+  </div>
+
+  <div class="step">
+    <h2>3. 选择固件</h2>
+    <input type="file" id="fwFile" accept=".bin" style="display:none" onchange="onFileSelect(event)">
+    <button id="fileBtn" onclick="document.getElementById('fwFile').click()">选择固件文件</button>
+    <p id="fileInfo" style="margin-top:8px"></p>
+  </div>
+
+  <div class="step">
+    <h2>4. 烧录</h2>
+    <button id="flashBtn" onclick="doFlash()" disabled>开始烧录</button>
+    <div class="progress"><div class="progress-bar" id="pbar"></div></div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script type="module">
+import { ESPLoader, Transport } from
+  'https://unpkg.com/esptool-js@0.5.0/bundle.js';
+
+let device, transport;
+
+function log(msg) {
+  const el = document.getElementById('log');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+window.doConnect = async function() {
+  log('正在连接...');
+  try {
+    device = await navigator.serial.requestPort();
+    await device.open({ baudRate: 115200 });
+    transport = new Transport(device);
+    document.getElementById('deviceInfo').textContent = '已连接';
+    document.getElementById('connectBtn').disabled = true;
+    log('设备已连接');
+    checkReady();
+  } catch(e) {
+    log('连接失败: ' + e.message);
+  }
+};
+
+window.onFileSelect = function(e) {
+  const f = e.target.files[0];
+  if (f) {
+    document.getElementById('fileInfo').textContent = f.name + ' (' + (f.size/1024/1024).toFixed(1) + ' MB)';
+    checkReady();
+  }
+};
+
+function checkReady() {
+  const fw = document.getElementById('fwFile').files[0];
+  document.getElementById('flashBtn').disabled = !(device && fw);
+}
+
+window.doFlash = async function() {
+  const fw = document.getElementById('fwFile').files[0];
+  if (!device || !fw) return;
+
+  document.getElementById('flashBtn').disabled = true;
+  document.getElementById('pbar').style.width = '0%';
+  log('开始烧录 ' + fw.name + '...');
+
+  try {
+    const loader = new ESPLoader({
+      transport: transport,
+      baudrate: 921600,
+      romBaudrate: 115200,
+    });
+
+    const arrayBuf = await fw.arrayBuffer();
+    const fileArray = [
+      { address: 0x0000, data: arrayBuf }
+    ];
+
+    await loader.main();
+    log('芯片: ' + loader.chipName);
+    log('MAC: ' + loader.macAddr());
+
+    const flashSize = arrayBuf.byteLength > 4*1024*1024 ? '8MB' : '4MB';
+    await loader.writeFlash({
+      fileArray: fileArray,
+      flashSize: flashSize,
+      eraseAll: true,
+    });
+
+    log('烧录完成！');
+    log('请拔掉 USB，重新上电启动 AuthStick');
+    document.getElementById('pbar').style.width = '100%';
+  } catch(e) {
+    log('烧录失败: ' + e.message);
+    document.getElementById('pbar').style.width = '0%';
+  }
+  document.getElementById('flashBtn').disabled = false;
+};
+
+log('准备就绪 — 仅支持 Chrome/Edge 浏览器');
+</script>
+</body>
+</html>
