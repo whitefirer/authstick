@@ -389,20 +389,40 @@ extern "C" void app_main(void) {
         last_tick = now_tick;
 
         button_event_t btn = button_poll();
-        if (code_count > 0 && btn == BTN_A_SHORT) {
+        bool menu_active = display_is_menu_active();
+
+        if (code_count > 0 && !menu_active && btn == BTN_A_SHORT) {
             ESP_LOGI(TAG, "APPROVE %s", pending[0].code);
             if (auth_client_approve(pending[0].code))
                 display_show_result(AUTH_STATE_APPROVED);
             else
                 display_show_error("approve err");
             code_count = 0; result_shown_at = esp_timer_get_time();
-        } else if (code_count > 0 && btn == BTN_B_SHORT) {
+        } else if (code_count > 0 && !menu_active && btn == BTN_B_SHORT) {
             ESP_LOGI(TAG, "DENY %s", pending[0].code);
             if (auth_client_deny(pending[0].code))
                 display_show_result(AUTH_STATE_DENIED);
             else
                 display_show_error("deny err");
             code_count = 0; result_shown_at = esp_timer_get_time();
+        } else if (menu_active && btn == BTN_A_SHORT) {
+            display_menu_next();
+        } else if (menu_active && (btn == BTN_B_SHORT || btn == BTN_B_LONG)) {
+            display_menu_select();
+            if (display_get_menu() == MENU_RECONFIG) {
+                ESP_LOGI(TAG, "Reconfig triggered from menu");
+                wifi.StopStation();
+                vTaskDelay(pdMS_TO_TICKS(500));
+                wifi.StartConfigAp();
+                display_show_wifi_config(wifi.GetApSsid().c_str());
+            }
+        } else if (code_count == 0 && !menu_active && btn == BTN_A_SHORT) {
+            // Toggle screen sleep
+            static bool screen_off = false;
+            screen_off = !screen_off;
+            display_set_backlight(!screen_off);
+        } else if (code_count == 0 && !menu_active && (btn == BTN_B_SHORT || btn == BTN_B_LONG)) {
+            display_show_menu();
         }
 
         // Clear result after timeout
