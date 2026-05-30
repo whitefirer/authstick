@@ -392,7 +392,7 @@ void display_show_wifi_config(const char *ap_ssid) {
     lv_obj_set_style_text_color(g_code_label, COLOR(0x4ade80), 0);
     set_hidden(g_code_label, false);
     if (g_countdown_label) {
-        lv_label_set_text(g_countdown_label, "192.168.4.1 Wi-Fi /auth-config \xe8\xae\xa4\xe8\xaf\x81");
+        lv_label_set_text(g_countdown_label, "\xe5\xb9\xb6\xe8\xae\xbf\xe9\x97\xae" "192.168.4.1\xe9\x85\x8d\xe7\xbd\xaeWifi\xe5\x92\x8c\xe8\xae\xa4\xe8\xaf\x81\xe6\x9c\x8d\xe5\x8a\xa1\xe5\x9c\xb0\xe5\x9d\x80");
         lv_obj_set_style_text_color(g_countdown_label, COLOR(0x888899), 0);
         set_hidden(g_countdown_label, false);
     }

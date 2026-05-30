@@ -1,4 +1,4 @@
-set(BUILTIN_TEXT_FONT font_noto_basic_16_4)
+set(BUILTIN_TEXT_FONT font_puhui_14_1)
 set(BUILTIN_ICON_FONT font_awesome_14_1)
 
 idf_component_register(SRCS "main.cpp"
