@@ -6,7 +6,6 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "cJSON.h"
-#include "esp_http_client.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
@@ -23,7 +22,9 @@ static const char *TAG = "main";
 
 #define POLL_INTERVAL_MS    3000
 #define RESULT_SHOW_MS      2000
-#define REG_POLL_INTERVAL_MS 3000
+#define CODE_TTL_US         300000000LL  // 5 min
+#define POLL_APPROVAL_US    5000000LL    // 5s between approval checks
+#define RETRY_DELAY_US      5000000LL    // 5s retry
 
 // ── M5PM1 PMIC ──────────────────────────────────────────
 
@@ -49,6 +50,34 @@ static const char *TAG = "main";
 #define M5PM1_IRQ_SYS_5VIN_INSERT BIT(0)
 #define M5PM1_IRQ_SYS_5VIN_REMOVE BIT(1)
 
+// ── State machine ───────────────────────────────────────
+
+enum DevState {
+    S_BOOTING,          // waiting for WiFi to connect
+    S_NO_WIFI,          // config AP active, waiting for user config
+    S_CHECKING,         // HTTP GET /api/device/status  (1 step)
+    S_REGISTERING,      // HTTP POST /api/device/register (1 step)
+    S_WAIT_APPROVAL,    // code displayed, polling for admin
+    S_READY,            // registered, polling for auth codes
+    S_ERROR,            // transient error, retry after delay
+};
+
+static DevState g_state = S_BOOTING;
+static int64_t g_state_deadline;   // when to advance (timeout/retry)
+static int64_t g_next_poll;        // next poll time (approval or auth codes)
+static char g_reg_code[8];         // current registration code
+static EspNetwork g_network;
+static char g_server_url[128];
+static char g_mac[18];
+
+static void set_state(DevState s, int64_t deadline_us) {
+    g_state = s;
+    g_state_deadline = esp_timer_get_time() + deadline_us;
+    ESP_LOGI(TAG, "State -> %d deadline=%lld", s, deadline_us / 1000);
+}
+
+// ── PMIC ─────────────────────────────────────────────────
+
 static i2c_master_dev_handle_t g_pmic = NULL;
 
 static bool pmic_read(uint8_t reg, uint8_t *val) {
@@ -65,17 +94,13 @@ static bool pmic_write(uint8_t reg, uint8_t val) {
 static bool pmic_find(i2c_port_t port, gpio_num_t sda, gpio_num_t scl) {
     i2c_master_bus_handle_t bus;
     i2c_master_bus_config_t bc = {};
-    bc.i2c_port = port;
-    bc.sda_io_num = sda;
-    bc.scl_io_num = scl;
+    bc.i2c_port = port; bc.sda_io_num = sda; bc.scl_io_num = scl;
     bc.clk_source = I2C_CLK_SRC_DEFAULT;
-    bc.glitch_ignore_cnt = 7;
-    bc.flags.enable_internal_pullup = true;
+    bc.glitch_ignore_cnt = 7; bc.flags.enable_internal_pullup = true;
     if (i2c_new_master_bus(&bc, &bus) != ESP_OK) return false;
     i2c_device_config_t dc = {};
     dc.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-    dc.device_address = M5PM1_ADDR;
-    dc.scl_speed_hz = 100000;
+    dc.device_address = M5PM1_ADDR; dc.scl_speed_hz = 100000;
     if (i2c_master_bus_add_device(bus, &dc, &g_pmic) != ESP_OK) return false;
     uint8_t id;
     return pmic_read(M5PM1_REG_DEVICE_ID, &id);
@@ -89,28 +114,21 @@ static void pmic_init(void) {
         {I2C_NUM_0, GPIO_NUM_48, GPIO_NUM_47},
     };
     for (int i = 0; i < 4; i++) {
-        if (pmic_find(t[i].p, t[i].s, t[i].c)) {
-            ESP_LOGI(TAG, "PMIC found port=%d", t[i].p);
-            break;
-        }
+        if (pmic_find(t[i].p, t[i].s, t[i].c)) { ESP_LOGI(TAG, "PMIC found"); break; }
     }
     if (!g_pmic) { ESP_LOGW(TAG, "PMIC not found"); return; }
-
     uint8_t v;
     pmic_read(M5PM1_REG_PWR_CFG, &v);
     pmic_write(M5PM1_REG_PWR_CFG, (v | M5PM1_PWR_CFG_LDO_EN) & ~M5PM1_PWR_CFG_LED_CTRL);
     pmic_read(M5PM1_REG_HOLD_CFG, &v);
     pmic_write(M5PM1_REG_HOLD_CFG, v | M5PM1_HOLD_CFG_LDO_HOLD);
-
     pmic_read(M5PM1_REG_GPIO_FUNC0, &v); v &= ~M5PM1_GPIO2_L3B_EN; pmic_write(M5PM1_REG_GPIO_FUNC0, v);
     pmic_read(M5PM1_REG_GPIO_MODE, &v);  v |= M5PM1_GPIO2_L3B_EN;  pmic_write(M5PM1_REG_GPIO_MODE, v);
     pmic_read(M5PM1_REG_GPIO_DRV, &v);   v &= ~M5PM1_GPIO2_L3B_EN; pmic_write(M5PM1_REG_GPIO_DRV, v);
     pmic_read(M5PM1_REG_GPIO_OUT, &v);   v |= M5PM1_GPIO2_L3B_EN;  pmic_write(M5PM1_REG_GPIO_OUT, v);
-
     pmic_write(M5PM1_REG_IRQ_MASK1, 0x1F);
     pmic_write(M5PM1_REG_IRQ_MASK3, 0x07);
     pmic_write(M5PM1_REG_IRQ_MASK2, 0x3F & ~(M5PM1_IRQ_SYS_5VIN_INSERT | M5PM1_IRQ_SYS_5VIN_REMOVE));
-    ESP_LOGI(TAG, "PMIC ready");
 }
 
 static int pmic_battery_pct(void) {
@@ -125,129 +143,147 @@ static int pmic_battery_pct(void) {
     return pct;
 }
 
-// ── Read auth server URL from NVS ───────────────────────
+// ── Auth helpers ────────────────────────────────────────
 
 static void get_server_url(char *buf, size_t buflen) {
     bool valid = false;
     nvs_handle_t nvs;
     if (nvs_open("wifi", NVS_READONLY, &nvs) == ESP_OK) {
         size_t len = buflen;
-        if (nvs_get_str(nvs, "auth_server_url", buf, &len) == ESP_OK && len > 0) {
-            valid = true;
-        }
+        if (nvs_get_str(nvs, "auth_server_url", buf, &len) == ESP_OK && len > 0) valid = true;
         nvs_close(nvs);
     }
-    if (!valid) {
-        strncpy(buf, CONFIG_AUTH_SERVER_URL, buflen - 1);
-    }
+    if (!valid) strncpy(buf, CONFIG_AUTH_SERVER_URL, buflen - 1);
     buf[buflen - 1] = '\0';
 }
 
-// ── Device registration ────────────────────────────────
+// ── State machine step (called once per main loop iteration) ──
 
-static EspNetwork g_network;
+static void sm_tick(void) {
+    int64_t now = esp_timer_get_time();
 
-static bool device_ensure_registered(const char *server_url) {
-    char mac[18];
-    auth_client_get_mac(mac);
-    char url[256];
+    switch (g_state) {
 
-    // Check if already registered
-    snprintf(url, sizeof(url), "%s/api/device/status?mac=%s", server_url, mac);
-    auto http = g_network.CreateHttp(0);
-    http->SetTimeout(5000);
-    if (http->Open("GET", url)) {
-        int st = http->GetStatusCode();
-        if (st == 200) {
+    case S_BOOTING:
+        // Just wait until network transitions us out
+        break;
+
+    case S_NO_WIFI:
+        // AP mode active, nothing to do (user configures via captive portal)
+        break;
+
+    case S_CHECKING: {
+        char url[256];
+        snprintf(url, sizeof(url), "%s/api/device/status?mac=%s", g_server_url, g_mac);
+        auto http = g_network.CreateHttp(0);
+        http->SetTimeout(3000);
+        bool already = false;
+        if (http->Open("GET", url) && http->GetStatusCode() == 200) {
             std::string body = http->ReadAll();
             cJSON *r = cJSON_Parse(body.c_str());
-            if (r) {
-                cJSON *reg = cJSON_GetObjectItem(r, "registered");
-                if (reg && cJSON_IsTrue(reg)) { cJSON_Delete(r); http->Close(); return true; }
-                cJSON_Delete(r);
-            }
+            if (r && cJSON_IsTrue(cJSON_GetObjectItem(r, "registered"))) already = true;
+            if (r) cJSON_Delete(r);
         }
-        ESP_LOGI(TAG, "Device check: status=%d", st);
+        http->Close();
+        vTaskDelay(pdMS_TO_TICKS(100));
+        if (already) { set_state(S_READY, CODE_TTL_US); display_show_idle(); }
+        else set_state(S_REGISTERING, 0);
+        break;
     }
-    http->Close();
 
-    // Register device
-    ESP_LOGI(TAG, "Device registering...");
-    display_show_connecting();
-    snprintf(url, sizeof(url), "%s/api/device/register", server_url);
-    auto http2 = g_network.CreateHttp(0);
-    http2->SetTimeout(5000);
-    http2->SetHeader("Content-Type", "application/json");
-    char post_body[128];
-    snprintf(post_body, sizeof(post_body), "{\"mac\":\"%s\"}", mac);
-    http2->SetContent(std::move(std::string(post_body)));
-    int st = 0;
-    char code[8] = {0};
-    if (http2->Open("POST", url)) {
-        st = http2->GetStatusCode();
-        if (st == 200) {
-            std::string body = http2->ReadAll();
-            cJSON *r = cJSON_Parse(body.c_str());
+    case S_REGISTERING: {
+        char url[256];
+        snprintf(url, sizeof(url), "%s/api/device/register", g_server_url);
+        auto http = g_network.CreateHttp(0);
+        http->SetTimeout(3000);
+        http->SetHeader("Content-Type", "application/json");
+        char body[128]; snprintf(body, sizeof(body), "{\"mac\":\"%s\"}", g_mac);
+        http->SetContent(std::move(std::string(body)));
+        memset(g_reg_code, 0, sizeof(g_reg_code));
+        bool got_code = false;
+        if (http->Open("POST", url) && http->GetStatusCode() == 200) {
+            std::string resp = http->ReadAll();
+            cJSON *r = cJSON_Parse(resp.c_str());
             if (r) {
                 cJSON *jc = cJSON_GetObjectItem(r, "code");
                 if (jc && jc->valuestring) {
-                    strncpy(code, jc->valuestring, sizeof(code) - 1);
-                    ESP_LOGI(TAG, "Reg code: %s", code);
+                    strncpy(g_reg_code, jc->valuestring, sizeof(g_reg_code)-1);
+                    got_code = true;
                 }
                 cJSON_Delete(r);
             }
         }
-    }
-    http2->Close();
-
-    if (code[0]) {
-        display_show_code(code, "RegCode", 300);
-        // Poll for admin approval
-        int64_t start = esp_timer_get_time();
-        while ((esp_timer_get_time() - start) < 300 * 1000000LL) {
-            vTaskDelay(pdMS_TO_TICKS(3000));
-            snprintf(url, sizeof(url), "%s/api/device/status?mac=%s", server_url, mac);
-            auto poll = g_network.CreateHttp(0);
-            poll->SetTimeout(5000);
-            if (poll->Open("GET", url) && poll->GetStatusCode() == 200) {
-                std::string body = poll->ReadAll();
-                cJSON *r = cJSON_Parse(body.c_str());
-                if (r) {
-                    cJSON *reg = cJSON_GetObjectItem(r, "registered");
-                    if (reg && cJSON_IsTrue(reg)) {
-                        cJSON_Delete(r); poll->Close();
-                        display_show_result(AUTH_STATE_APPROVED);
-                        vTaskDelay(pdMS_TO_TICKS(2000));
-                        return true;
-                    }
-                    cJSON_Delete(r);
-                }
-            }
-            poll->Close();
+        http->Close();
+        vTaskDelay(pdMS_TO_TICKS(100));
+        if (got_code) {
+            display_show_code(g_reg_code, "RegCode", 300);
+            set_state(S_WAIT_APPROVAL, CODE_TTL_US);
+            g_next_poll = now + POLL_APPROVAL_US;
+            ESP_LOGI(TAG, "Reg code: %s", g_reg_code);
+        } else {
+            display_show_error("reg err");
+            set_state(S_ERROR, RETRY_DELAY_US);
         }
-    } else {
-        char err[64];
-        snprintf(err, sizeof(err), "reg err:%d", st);
-        display_show_error(err);
-        vTaskDelay(pdMS_TO_TICKS(3000));
+        break;
     }
-    return false;
+
+    case S_WAIT_APPROVAL:
+        if (now > g_state_deadline) {
+            // Code expired, get a new one
+            set_state(S_REGISTERING, 0);
+            break;
+        }
+        if (now >= g_next_poll) {
+            g_next_poll = now + POLL_APPROVAL_US;
+            char url[256];
+            snprintf(url, sizeof(url), "%s/api/device/status?mac=%s", g_server_url, g_mac);
+            auto http = g_network.CreateHttp(0);
+            http->SetTimeout(3000);
+            bool approved = false;
+            if (http->Open("GET", url) && http->GetStatusCode() == 200) {
+                std::string body = http->ReadAll();
+                cJSON *r = cJSON_Parse(body.c_str());
+                if (r && cJSON_IsTrue(cJSON_GetObjectItem(r, "registered"))) approved = true;
+                if (r) cJSON_Delete(r);
+            }
+            http->Close();
+            vTaskDelay(pdMS_TO_TICKS(100));
+            if (approved) {
+                display_show_result(AUTH_STATE_APPROVED);
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                set_state(S_READY, 0);
+            }
+        }
+        break;
+
+    case S_READY:
+        // Poll for auth codes every POLL_INTERVAL_MS
+        if (now >= g_next_poll) {
+            g_next_poll = now + POLL_INTERVAL_MS * 1000LL;
+            auth_pending_code_t codes[4];
+            int n = auth_client_poll(codes, 4);
+            if (n > 0) {
+                display_show_code(codes[0].code, codes[0].service_name, codes[0].expires_in);
+                ESP_LOGI(TAG, "Auth code: %s", codes[0].code);
+            }
+        }
+        break;
+
+    case S_ERROR:
+        if (now >= g_state_deadline) {
+            get_server_url(g_server_url, sizeof(g_server_url));
+            auth_client_init(g_server_url);
+            set_state(S_CHECKING, 0);
+        }
+        break;
+    }
 }
 
-// ── Battery refresh timer ───────────────────────────────
+// ── Battery timer ────────────────────────────────────────
 
 static void battery_timer_cb(void*) {
     int pct = pmic_battery_pct();
     if (pct >= 0) display_set_battery(pct, false);
-}
-
-// ── Re-enter config mode ────────────────────────────────
-
-static void reenter_config(WifiManager &wifi) {
-    ESP_LOGI(TAG, "Re-entering config mode...");
-    wifi.StartConfigAp();
-    display_set_config_mode(true);
-    display_show_wifi_config(wifi.GetApSsid().c_str());
 }
 
 // ── Main ────────────────────────────────────────────────
@@ -278,10 +314,11 @@ extern "C" void app_main(void) {
     wifi.Initialize(wcfg);
 
     EventGroupHandle_t wifi_evt = xEventGroupCreate();
+    bool need_station = false;
     wifi.SetEventCallback([&](WifiEvent event, const std::string& data) {
         switch (event) {
         case WifiEvent::Connected:
-            ESP_LOGI(TAG, "WiFi connected: %s RSSI=%d", wifi.GetSsid().c_str(), wifi.GetRssi());
+            ESP_LOGI(TAG, "WiFi connected: %s", wifi.GetSsid().c_str());
             display_set_wifi_connected(true);
             display_set_wifi(wifi.GetRssi());
             xEventGroupSetBits(wifi_evt, BIT0);
@@ -290,73 +327,63 @@ extern "C" void app_main(void) {
             display_set_wifi_connected(false);
             break;
         case WifiEvent::ConfigModeEnter:
-            ESP_LOGI(TAG, "Config mode: AP=%s", wifi.GetApSsid().c_str());
+            ESP_LOGI(TAG, "Config mode: %s", wifi.GetApSsid().c_str());
             display_set_config_mode(true);
             display_show_wifi_config(wifi.GetApSsid().c_str());
             break;
         case WifiEvent::ConfigModeExit:
-            ESP_LOGI(TAG, "Config done, restarting...");
-            esp_restart();
+            ESP_LOGI(TAG, "Config done, starting station...");
+            need_station = true;
+            xEventGroupSetBits(wifi_evt, BIT1);
             break;
         default: break;
         }
     });
 
-    // ── Connect to WiFi ─────────────────────────────────
+    // ── Connect ─────────────────────────────────────────
     auto& ssid_mgr = SsidManager::GetInstance();
     if (ssid_mgr.GetSsidList().empty()) {
-        ESP_LOGI(TAG, "No saved WiFi, entering config mode...");
         vTaskDelay(pdMS_TO_TICKS(1500));
         wifi.StartConfigAp();
     } else {
         wifi.StartStation();
         EventBits_t bits = xEventGroupWaitBits(wifi_evt, BIT0, pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
-        if (!wifi.IsConnected()) {
-            ESP_LOGI(TAG, "WiFi connect failed, starting config AP...");
-            wifi.StartConfigAp();
-        }
+        if (!wifi.IsConnected()) wifi.StartConfigAp();
     }
-
-    // Wait for WiFi connection
     while (!wifi.IsConnected()) {
+        if (need_station) { need_station = false; wifi.StartStation(); }
         vTaskDelay(pdMS_TO_TICKS(500));
     }
     ESP_LOGI(TAG, "WiFi connected!");
 
-    // ── TEST: just do one GET request ──
-    char server_url[128] = {0};
-    get_server_url(server_url, sizeof(server_url));
-    auth_client_init(server_url);
+    // ── Init ────────────────────────────────────────────
+    get_server_url(g_server_url, sizeof(g_server_url));
+    auth_client_init(g_server_url);
+    auth_client_get_mac(g_mac);
     button_init();
-    display_show_connecting();
+    vTaskPrioritySet(nullptr, 10);
 
-    // ── Registration in main task ──
-    auth_client_init(server_url);
-    vTaskDelay(pdMS_TO_TICKS(3000));
+    // Enter registration flow
+    set_state(S_CHECKING, 0);
 
-    char reg_url[128];
-    get_server_url(reg_url, sizeof(reg_url));
-    bool reg_ok = false;
-    while (!reg_ok) {
-        if (device_ensure_registered(reg_url)) {
-            reg_ok = true;
-            break;
-        }
-        ESP_LOGW("reg", "Registration failed, retrying...");
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        get_server_url(reg_url, sizeof(reg_url));
-        auth_client_init(reg_url);
-    }
-
-    // ── Main loop ───────────────────────────────────────
-    display_show_idle();
+    // ── Main event loop ─────────────────────────────────
     auth_pending_code_t pending[4];
-    int code_count = 0;
-    int64_t last_poll = 0, result_shown_at = 0;
-    int countdown = 0;
+    int code_count = 0, countdown = 0;
+    int64_t result_shown_at = 0;
     TickType_t last_tick = xTaskGetTickCount();
+    bool idle_shown = false;
 
     while (1) {
+        // Run state machine (one step, non-blocking)
+        sm_tick();
+
+        // Show idle once registered
+        if (g_state == S_READY && !idle_shown) {
+            idle_shown = true;
+            display_show_idle();
+        }
+
+        // ── Button handling ──────────────────────────────
         TickType_t now_tick = xTaskGetTickCount();
         int elapsed_ms = (now_tick - last_tick) * portTICK_PERIOD_MS;
         last_tick = now_tick;
@@ -367,35 +394,32 @@ extern "C" void app_main(void) {
             if (auth_client_approve(pending[0].code))
                 display_show_result(AUTH_STATE_APPROVED);
             else
-                display_show_error("\xe6\x89\xb9\xe5\x87\x86\xe5\xa4\xb1\xe8\xb4\xa5");
+                display_show_error("approve err");
             code_count = 0; result_shown_at = esp_timer_get_time();
         } else if (code_count > 0 && btn == BTN_B_SHORT) {
             ESP_LOGI(TAG, "DENY %s", pending[0].code);
             if (auth_client_deny(pending[0].code))
                 display_show_result(AUTH_STATE_DENIED);
             else
-                display_show_error("\xe6\x8b\x92\xe7\xbb\x9d\xe5\xa4\xb1\xe8\xb4\xa5");
+                display_show_error("deny err");
             code_count = 0; result_shown_at = esp_timer_get_time();
         }
+
+        // Clear result after timeout
         if (result_shown_at > 0 && (esp_timer_get_time() - result_shown_at) > RESULT_SHOW_MS * 1000LL) {
             display_show_idle(); result_shown_at = 0;
         }
 
+        // Countdown
         if (code_count > 0 && countdown > 0) {
             countdown -= elapsed_ms / 1000;
             if (countdown <= 0) { code_count = 0; display_show_idle(); }
             else display_update_countdown(countdown);
         }
 
-        if (code_count == 0 && result_shown_at == 0 &&
-            (esp_timer_get_time() - last_poll) > POLL_INTERVAL_MS * 1000LL) {
-            last_poll = esp_timer_get_time();
-            int n = auth_client_poll(pending, 4);
-            if (n > 0) {
-                code_count = 1; countdown = pending[0].expires_in;
-                display_show_code(pending[0].code, pending[0].service_name, countdown);
-                ESP_LOGI(TAG, "Got code: %s", pending[0].code);
-            }
+        // Auth code poll (only when registered and idle)
+        if (g_state == S_READY && code_count == 0 && result_shown_at == 0) {
+            // polling handled by sm_tick
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));
