@@ -65,6 +65,7 @@ enum DevState {
 static DevState g_state = S_BOOTING;
 static int64_t g_state_deadline;   // when to advance (timeout/retry)
 static int64_t g_next_poll;        // next poll time (approval or auth codes)
+static int64_t g_code_expires_at;  // auth code expiry timestamp
 static char g_reg_code[8];         // current registration code
 static EspNetwork g_network;
 static char g_server_url[128];
@@ -264,6 +265,7 @@ static void sm_tick(void) {
             int n = auth_client_poll(codes, 4);
             if (n > 0) {
                 display_show_code(codes[0].code, codes[0].service_name, codes[0].expires_in);
+                g_code_expires_at = esp_timer_get_time() + codes[0].expires_in * 1000000LL;
                 ESP_LOGI(TAG, "Auth code: %s", codes[0].code);
             }
         }
@@ -367,10 +369,6 @@ extern "C" void app_main(void) {
     set_state(S_CHECKING, 0);
 
     // ── Main event loop ─────────────────────────────────
-    auth_pending_code_t pending[4];
-    int code_count = 0, countdown = 0;
-    int64_t result_shown_at = 0;
-    TickType_t last_tick = xTaskGetTickCount();
     bool idle_shown = false;
 
     while (1) {
@@ -384,28 +382,10 @@ extern "C" void app_main(void) {
         }
 
         // ── Button handling ──────────────────────────────
-        TickType_t now_tick = xTaskGetTickCount();
-        int elapsed_ms = (now_tick - last_tick) * portTICK_PERIOD_MS;
-        last_tick = now_tick;
-
         button_event_t btn = button_poll();
         bool menu_active = display_is_menu_active();
 
-        if (code_count > 0 && !menu_active && btn == BTN_A_SHORT) {
-            ESP_LOGI(TAG, "APPROVE %s", pending[0].code);
-            if (auth_client_approve(pending[0].code))
-                display_show_result(AUTH_STATE_APPROVED);
-            else
-                display_show_error("approve err");
-            code_count = 0; result_shown_at = esp_timer_get_time();
-        } else if (code_count > 0 && !menu_active && btn == BTN_B_SHORT) {
-            ESP_LOGI(TAG, "DENY %s", pending[0].code);
-            if (auth_client_deny(pending[0].code))
-                display_show_result(AUTH_STATE_DENIED);
-            else
-                display_show_error("deny err");
-            code_count = 0; result_shown_at = esp_timer_get_time();
-        } else if (menu_active && btn == BTN_A_SHORT) {
+        if (menu_active && btn == BTN_A_SHORT) {
             display_menu_next();
         } else if (menu_active && (btn == BTN_B_SHORT || btn == BTN_B_LONG)) {
             display_menu_select();
@@ -416,30 +396,18 @@ extern "C" void app_main(void) {
                 wifi.StartConfigAp();
                 display_show_wifi_config(wifi.GetApSsid().c_str());
             }
-        } else if (code_count == 0 && !menu_active && btn == BTN_A_SHORT) {
-            // Toggle screen sleep
+        } else if (!menu_active && btn == BTN_A_SHORT) {
             static bool screen_off = false;
             screen_off = !screen_off;
             display_set_backlight(!screen_off);
-        } else if (code_count == 0 && !menu_active && (btn == BTN_B_SHORT || btn == BTN_B_LONG)) {
+        } else if (!menu_active && (btn == BTN_B_SHORT || btn == BTN_B_LONG)) {
             display_show_menu();
         }
 
-        // Clear result after timeout
-        if (result_shown_at > 0 && (esp_timer_get_time() - result_shown_at) > RESULT_SHOW_MS * 1000LL) {
-            display_show_idle(); result_shown_at = 0;
-        }
-
-        // Countdown
-        if (code_count > 0 && countdown > 0) {
-            countdown -= elapsed_ms / 1000;
-            if (countdown <= 0) { code_count = 0; display_show_idle(); }
-            else display_update_countdown(countdown);
-        }
-
-        // Auth code poll (only when registered and idle)
-        if (g_state == S_READY && code_count == 0 && result_shown_at == 0) {
-            // polling handled by sm_tick
+        // Code expiry — return to idle when code expires
+        if (g_code_expires_at > 0 && esp_timer_get_time() > g_code_expires_at) {
+            g_code_expires_at = 0;
+            display_show_idle();
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));
