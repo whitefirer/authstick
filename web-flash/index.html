@@ -348,7 +348,7 @@ footer a:hover{text-decoration:underline}
         </div>
         <input type="file" id="fwFile" accept=".bin" style="display:none" onchange="onLocalFile(event)">
         <div class="flash-log" id="log"><div style="color:#a0b8d0">日志会显示在这里。</div></div>
-        <p class="browser-note">仅支持 Chrome / Edge 浏览器（需要 Web Serial API）</p>
+        <p id="shaLine" class="browser-note" style="display:none;font-family:monospace;cursor:pointer" title="点击复制 SHA256"></p>
       </div>
     </div>
   </div>
@@ -391,9 +391,21 @@ function setProgress(pct, label) {
     const resp = await fetch(FW_URL);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     fwData = await resp.arrayBuffer();
+    const hash = await crypto.subtle.digest('SHA-256', fwData);
+    const sha = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
     fwReady = true;
     document.getElementById('fwInfo').textContent =
       'ESP32-S3 · StickS3 · ' + (fwData.byteLength/1024).toFixed(0) + ' KB';
+    var sl = document.getElementById('shaLine');
+    sl.innerHTML = '<span style="cursor:pointer" title="点击复制 SHA256">SHA256: ' + sha + '</span>';
+    sl.style.display = 'block';
+    sl.onclick = function() {
+      navigator.clipboard.writeText(sha);
+      sl.style.color = 'var(--green)';
+      setTimeout(function(){ sl.style.color = ''; }, 2000);
+    };
+    sl.onmouseenter = function(){ if(sl.style.color !== 'var(--green)') sl.style.color = 'var(--ink)'; };
+    sl.onmouseleave = function(){ if(sl.style.color === 'var(--ink)') sl.style.color = 'var(--muted)'; };
     document.getElementById('flashBtn').disabled = false;
     document.getElementById('flashBtn').textContent = '开始烧录';
   } catch(e) {

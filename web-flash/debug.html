@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AuthStick 串口调试</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#1a1a2e;color:#e0e0e0;
+  display:flex;justify-content:center;align-items:center;min-height:100vh}
+.panel{background:#16213e;border-radius:12px;padding:1.5rem;width:100%;max-width:640px}
+h1{color:#e94560;margin-bottom:.5rem;font-size:1.2rem}
+.topbar{display:flex;gap:8px;align-items:center;margin-bottom:1rem;flex-wrap:wrap}
+.topbar label{font-size:.8rem;color:#889}
+.topbar select,.topbar input{background:#0f3460;color:#e0e0e0;border:1px solid #334;
+  border-radius:4px;padding:4px 8px;font-size:.8rem}
+.topbar input{width:80px}
+button{background:#e94560;color:#fff;border:none;padding:6px 14px;
+  border-radius:6px;font-size:.8rem;cursor:pointer}
+button:disabled{background:#333;color:#666;cursor:not-allowed}
+button.sm{background:#334;font-size:.75rem;padding:4px 10px}
+#term{background:#0a0a14;border-radius:6px;padding:10px;
+  font-family:monospace;font-size:.8rem;height:360px;overflow-y:auto;
+  white-space:pre-wrap;word-break:break-all;margin-bottom:.5rem}
+#term .rx{color:#3ecf8e}
+#term .tx{color:#e94560}
+#term .info{color:#889}
+#input{width:100%;background:#0f3460;color:#e0e0e0;border:1px solid #334;
+  border-radius:4px;padding:6px 10px;font-family:monospace;font-size:.8rem;
+  margin-top:4px}
+</style>
+</head>
+<body>
+<div class="panel">
+  <h1>AuthStick 串口调试</h1>
+
+  <div class="topbar">
+    <button id="connBtn" onclick="doConnect()">连接</button>
+    <label>波特率</label>
+    <select id="baud"><option>115200</option><option>921600</option><option>460800</option><option>230400</option><option>57600</option><option>9600</option></select>
+    <button class="sm" onclick="clearTerm()">清屏</button>
+    <span id="status" style="font-size:.75rem;color:#889">未连接</span>
+  </div>
+
+  <div id="term"></div>
+
+  <input id="input" type="text" placeholder="输入文本后按 Enter 发送 (Ctrl+Enter 换行)" onkeydown="onInputKey(event)">
+</div>
+
+<script>
+let port, reader, writeToPort, readLoop;
+
+const term = document.getElementById('term');
+const input = document.getElementById('input');
+const connBtn = document.getElementById('connBtn');
+const status = document.getElementById('status');
+
+function addLine(cls, text) {
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = new Date().toLocaleTimeString() + ' ' + text;
+  term.appendChild(d);
+  term.scrollTop = term.scrollHeight;
+}
+
+async function doConnect() {
+  if (port) {
+    await disconnect();
+    return;
+  }
+  try {
+    port = await navigator.serial.requestPort();
+    const baud = parseInt(document.getElementById('baud').value);
+    await port.open({ baudRate: baud, dataBits: 8, stopBits: 1, parity: 'none' });
+    connBtn.textContent = '断开';
+    connBtn.style.background = '#3ecf8e';
+    status.textContent = '已连接 ' + baud;
+
+    const encoder = new TextEncoder();
+    const writer = port.writable.getWriter();
+    writeToPort = async (s) => {
+      await writer.write(encoder.encode(s));
+    };
+    readLoop = true;
+    readStream(port.readable.getReader());
+    addLine('info', '已连接 ' + baud + ' baud');
+  } catch(e) {
+    addLine('rx', '连接失败: ' + e.message);
+  }
+}
+
+async function disconnect() {
+  readLoop = false;
+  try { await writeToPort?.('\r\n'); } catch(e) {}
+  try { await port?.close(); } catch(e) {}
+  port = null;
+  connBtn.textContent = '连接';
+  connBtn.style.background = '#e94560';
+  status.textContent = '已断开';
+  addLine('info', '已断开');
+}
+
+async function readStream(reader) {
+  const decoder = new TextDecoder();
+  let buf = '';
+  try {
+    while (readLoop && port) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) {
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const l of lines) if (l.trim()) addLine('rx', l);
+      }
+    }
+  } catch(e) {
+    if (readLoop) addLine('rx', '读取错误: ' + e.message);
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function onInputKey(e) {
+  if (e.key === 'Enter' && !e.ctrlKey) {
+    e.preventDefault();
+    const text = input.value + '\r\n';
+    if (text.trim()) addLine('tx', input.value);
+    writeToPort?.(text);
+    input.value = '';
+  }
+  if (e.key === 'Enter' && e.ctrlKey) {
+    input.value += '\n';
+  }
+}
+
+function clearTerm() { term.innerHTML = ''; }
+
+addLine('info', '准备就绪 — 仅支持 Chrome/Edge 浏览器');
+addLine('info', '请将 StickS3 以普通模式插入 USB（非烧录模式）');
+</script>
+</body>
+</html>

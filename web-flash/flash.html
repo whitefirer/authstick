@@ -22,6 +22,12 @@ button:disabled{background:#333;color:#666;cursor:not-allowed}
   white-space:pre-wrap;word-break:break-all}
 .progress{height:6px;background:#333;border-radius:3px;margin:1rem 0;overflow:hidden}
 .progress-bar{height:100%;background:#e94560;width:0%;transition:width .3s}
+.sha{background:#0a0a14;border-radius:6px;padding:8px 10px;margin-top:8px;
+  font-family:monospace;font-size:.75rem;color:#3ecf8e;word-break:break-all;
+  display:none}
+.sha .label{color:#889}
+.sha.ok{color:#3ecf8e}
+.sha.mismatch{color:#e94560}
 </style>
 </head>
 <body>
@@ -45,6 +51,10 @@ button:disabled{background:#333;color:#666;cursor:not-allowed}
     <input type="file" id="fwFile" accept=".bin" style="display:none" onchange="onFileSelect(event)">
     <button id="fileBtn" onclick="document.getElementById('fwFile').click()">选择固件文件</button>
     <p id="fileInfo" style="margin-top:8px"></p>
+    <div class="sha" id="shaBox">
+      <span class="label">SHA256: </span><span id="shaVal"></span>
+      <br><small class="label">请与发布页核对 SHA256 一致后再烧录</small>
+    </div>
   </div>
 
   <div class="step">
@@ -82,10 +92,20 @@ window.doConnect = async function() {
   }
 };
 
-window.onFileSelect = function(e) {
+async function sha256(buf) {
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+window.onFileSelect = async function(e) {
   const f = e.target.files[0];
   if (f) {
-    document.getElementById('fileInfo').textContent = f.name + ' (' + (f.size/1024/1024).toFixed(1) + ' MB)';
+    document.getElementById('fileInfo').textContent =
+      f.name + ' (' + (f.size/1024/1024).toFixed(1) + ' MB)';
+    const buf = await f.arrayBuffer();
+    const hash = await sha256(buf);
+    document.getElementById('shaVal').textContent = hash;
+    document.getElementById('shaBox').style.display = 'block';
     checkReady();
   }
 };
@@ -104,13 +124,13 @@ window.doFlash = async function() {
   log('开始烧录 ' + fw.name + '...');
 
   try {
+    const arrayBuf = await fw.arrayBuffer();
     const loader = new ESPLoader({
       transport: transport,
       baudrate: 921600,
       romBaudrate: 115200,
     });
 
-    const arrayBuf = await fw.arrayBuffer();
     const fileArray = [
       { address: 0x0000, data: arrayBuf }
     ];
@@ -126,8 +146,9 @@ window.doFlash = async function() {
       eraseAll: true,
     });
 
-    log('烧录完成！');
-    log('请拔掉 USB，重新上电启动 AuthStick');
+    log('烧录完成，正在重启设备...');
+    await loader.hardReset();
+    log('设备已重启，可关闭此页面');
     document.getElementById('pbar').style.width = '100%';
   } catch(e) {
     log('烧录失败: ' + e.message);

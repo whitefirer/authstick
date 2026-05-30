@@ -25,7 +25,25 @@ esptool.py --chip esp32s3 merge_bin \
 # Also copy standalone app binary
 cp build/authstick.bin "$WEB_DIR/authstick.bin"
 
+# Compute SHA256 and write meta
+SHA256=$(sha256sum "$WEB_DIR/authstick-merged.bin" | awk '{print $1}')
+SIZE=$(stat -c%s "$WEB_DIR/authstick-merged.bin")
+
+cat > "$WEB_DIR/fw-meta.json" << JSONEOF
+{
+  "version": "$(date +%Y%m%d-%H%M)",
+  "sha256": "$SHA256",
+  "size": $SIZE,
+  "url": "authstick-merged.bin"
+}
+JSONEOF
+
+echo ""
 echo "=== Done ==="
-echo "Merged: $WEB_DIR/authstick-merged.bin"
-echo "Start web-flash: cd $WEB_DIR && node -e \"...\"  (port 8999)"
-echo "Or: cd $WEB_DIR && python3 -m http.server 8999"
+echo "Merged:  $WEB_DIR/authstick-merged.bin ($(du -h "$WEB_DIR/authstick-merged.bin" | cut -f1))"
+echo "SHA256:  $SHA256"
+echo ""
+echo "Flash page:     http://localhost:8999/flash.html"
+echo "Dev tools:      http://localhost:8999/dev.html"
+echo "Debug terminal: http://localhost:8999/debug.html"
+echo ""

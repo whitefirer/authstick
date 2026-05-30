@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AuthStick Dev Tools</title>
+<style>
+:root{--bg:#0a0a10;--panel:#13131f;--card:#1a1a2c;--border:#1f1f38;
+  --ink:#e4e4ee;--muted:#7c7c94;--accent:#e94560;--green:#3ecf8e;--blue:#4a9eff}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,monospace;background:var(--bg);color:var(--ink);
+  min-height:100vh;padding:1rem}
+.wrap{max-width:900px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:1.2rem}
+.panel.full{grid-column:1/-1}
+h2{font-size:1rem;color:var(--accent);margin-bottom:.8rem}
+label{font-size:.75rem;color:var(--muted);display:block;margin:6px 0 2px}
+input,select,textarea{width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--border);
+  border-radius:4px;padding:6px 10px;font-family:monospace;font-size:.8rem}
+input[type="file"]{display:none}
+button{background:var(--accent);color:#fff;border:none;padding:6px 14px;
+  border-radius:4px;font-size:.8rem;cursor:pointer}
+button:disabled{background:#333;color:#666;cursor:not-allowed}
+button.sm{background:var(--border);padding:3px 8px;font-size:.7rem}
+.btnrow{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+#term{background:var(--bg);border-radius:4px;padding:8px;
+  font-family:monospace;font-size:.75rem;height:320px;overflow-y:auto;
+  white-space:pre-wrap;word-break:break-all;line-height:1.4}
+#term .rx{color:var(--green)}
+#term .tx{color:var(--accent)}
+#term .sys{color:var(--muted)}
+#log{background:var(--bg);border-radius:4px;padding:8px;
+  font-family:monospace;font-size:.75rem;max-height:160px;overflow-y:auto;
+  white-space:pre-wrap;word-break:break-all;line-height:1.4;color:var(--muted)}
+.bar{height:4px;background:var(--border);border-radius:2px;margin-top:6px;overflow:hidden}
+.bar>div{height:100%;background:var(--accent);width:0%;transition:width .3s}
+.meta{font-size:.7rem;color:var(--muted);margin-top:4px}
+.meta .val{color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- LEFT: Flasher -->
+<div class="panel">
+  <h2>固件烧录</h2>
+  <label>固件地址（默认 web-flash 最新固件）</label>
+  <input type="text" id="fwUrl" onchange="onUrlChange()">
+  <div class="meta" id="fwMeta"></div>
+  <div class="btnrow">
+    <button id="selBtn" onclick="document.getElementById('fwFile').click()">选择本地文件</button>
+    <button id="connBtn" onclick="doFlashConnect()">连接设备 (烧录)</button>
+    <button id="flashBtn" onclick="doFlash()" disabled>开始烧录</button>
+  </div>
+  <input type="file" id="fwFile" accept=".bin" onchange="onFileSelect(event)">
+  <div class="bar"><div id="pbar"></div></div>
+  <div id="log"></div>
+</div>
+
+<!-- RIGHT: Terminal -->
+<div class="panel">
+  <h2>串口监视</h2>
+  <div class="btnrow" style="margin-bottom:8px">
+    <button id="termConnBtn" onclick="doTermConnect()">连接串口</button>
+    <select id="baud" style="width:auto"><option>115200</option><option>921600</option><option>460800</option><option>230400</option><option>57600</option><option>9600</option></select>
+    <button class="sm" onclick="clearTerm()">清屏</button>
+    <span id="termStatus" style="font-size:.7rem;color:var(--muted)">未连接</span>
+  </div>
+  <div id="term"></div>
+  <input id="termInput" type="text" placeholder="Enter 发送 · Ctrl+Enter 换行" onkeydown="onTermKey(event)" style="margin-top:6px">
+</div>
+
+</div>
+
+<script type="module">
+import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.0/bundle.js';
+
+// ── Default firmware URL ─────────────────────────────
+const DEFAULT_FW = location.origin + '/authstick-merged.bin';
+const FW_META_URL = location.origin + '/fw-meta.json';
+document.getElementById('fwUrl').value = DEFAULT_FW;
+
+// ── Shared state ─────────────────────────────────────
+let fwBuf = null, fwHash = '', fwSize = 0;
+let flashDev, flashTransport;
+
+// ── Helpers ──────────────────────────────────────────
+const $ = id => document.getElementById(id);
+function log(msg) { const el=$('log'); el.textContent+=msg+'\n'; el.scrollTop=el.scrollHeight; }
+function addLine(cls,text){ const d=document.createElement('div');
+  d.className=cls; d.textContent=new Date().toLocaleTimeString()+' '+text;
+  $('term').appendChild(d); $('term').scrollTop=$('term').scrollHeight; }
+
+async function sha256(buf){ const h=await crypto.subtle.digest('SHA-256',buf);
+  return Array.from(new Uint8Array(h)).map(b=>b.toString(16).padStart(2,'0')).join(''); }
+
+// ── Firmware load (URL or local file) ────────────────
+async function loadFwUrl(url) {
+  log('加载固件: '+url);
+  const r = await fetch(url);
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  fwBuf = await r.arrayBuffer();
+  fwHash = await sha256(fwBuf);
+  fwSize = fwBuf.byteLength;
+  $('fwMeta').innerHTML = 'SHA256: <span class="val">'+fwHash+'</span> · '+
+    (fwSize/1024/1024).toFixed(1)+' MB';
+  checkFlashReady();
+  log('固件就绪 · SHA256: '+fwHash);
+}
+
+window.onUrlChange = function(){
+  const url = $('fwUrl').value.trim();
+  if(url) loadFwUrl(url).catch(e=>log('加载失败: '+e.message));
+};
+
+window.onFileSelect = async function(e){
+  const f = e.target.files[0];
+  if(!f) return;
+  fwBuf = await f.arrayBuffer();
+  fwHash = await sha256(fwBuf);
+  fwSize = fwBuf.byteLength;
+  $('fwMeta').innerHTML = f.name+' · SHA256: <span class="val">'+fwHash+'</span> · '+
+    (fwSize/1024/1024).toFixed(1)+' MB';
+  checkFlashReady();
+  log('本地文件就绪 · SHA256: '+fwHash);
+};
+
+function checkFlashReady(){
+  $('flashBtn').disabled = !(flashDev && fwBuf);
+}
+
+// ── Flash ────────────────────────────────────────────
+window.doFlashConnect = async function(){
+  try{
+    flashDev = await navigator.serial.requestPort();
+    await flashDev.open({baudRate:115200});
+    flashTransport = new Transport(flashDev);
+    $('connBtn').disabled = true;
+    $('connBtn').textContent = '已连接';
+    log('烧录设备已连接');
+    checkFlashReady();
+  }catch(e){ log('连接失败: '+e.message); }
+};
+
+window.doFlash = async function(){
+  if(!flashDev||!fwBuf) return;
+  $('flashBtn').disabled=true; $('pbar').style.width='0%';
+  log('开始烧录...');
+  try{
+    const loader = new ESPLoader({transport:flashTransport,baudrate:921600,romBaudrate:115200});
+    await loader.main();
+    log('芯片: '+loader.chipName+' · MAC: '+loader.macAddr());
+    await loader.writeFlash({fileArray:[{address:0x0000,data:fwBuf}],
+      flashSize:fwSize>4*1024*1024?'8MB':'4MB',eraseAll:true});
+    $('pbar').style.width='100%';
+    log('烧录完成，正在重启...');
+    await loader.hardReset();
+    log('设备已重启');
+    addLine('sys','[烧录完成，设备已重启]');
+  }catch(e){ log('烧录失败: '+e.message); }
+  $('flashBtn').disabled=false;
+};
+
+// ── Terminal ─────────────────────────────────────────
+let termPort, termWriter, termReaderAlive;
+
+window.doTermConnect = async function(){
+  if(termPort){ await termDisconnect(); return; }
+  try{
+    termPort = await navigator.serial.requestPort();
+    await termPort.open({baudRate:parseInt($('baud').value),dataBits:8,stopBits:1,parity:'none'});
+    $('termConnBtn').textContent='断开'; $('termConnBtn').style.background='var(--green)';
+    $('termStatus').textContent='已连接';
+    termWriter = termPort.writable.getWriter();
+    termReaderAlive = true;
+    readTerm(termPort.readable.getReader());
+    addLine('sys','已连接 '+$('baud').value+' baud');
+  }catch(e){ addLine('sys','连接失败: '+e.message); }
+};
+
+async function termDisconnect(){
+  termReaderAlive=false;
+  try{termWriter?.releaseLock();}catch(e){}
+  try{await termPort?.close();}catch(e){}
+  termPort=null;
+  $('termConnBtn').textContent='连接串口'; $('termConnBtn').style.background='';
+  $('termStatus').textContent='已断开';
+  addLine('sys','已断开');
+}
+
+async function readTerm(reader){
+  const dec=new TextDecoder(); let buf='';
+  try{
+    while(termReaderAlive&&termPort){
+      const{value,done}=await reader.read(); if(done)break;
+      if(value){ buf+=dec.decode(value,{stream:true});
+        const lines=buf.split('\n'); buf=lines.pop();
+        for(const l of lines) if(l.trim()) addLine('rx',l); }
+    }
+  }catch(e){ if(termReaderAlive) addLine('rx','错误: '+e.message); }
+  finally{reader.releaseLock();}
+}
+
+window.onTermKey = function(e){
+  if(e.key==='Enter'&&!e.ctrlKey){ e.preventDefault();
+    const t=$('termInput').value; addLine('tx',t);
+    if(termWriter) termWriter.write(new TextEncoder().encode(t+'\r\n'));
+    $('termInput').value=''; }
+  if(e.key==='Enter'&&e.ctrlKey){ e.preventDefault(); $('termInput').value+='\n'; }
+};
+
+window.clearTerm = function(){ $('term').innerHTML=''; };
+
+// ── Auto-load default firmware ───────────────────────
+loadFwUrl(DEFAULT_FW).catch(()=>log('默认固件未加载，可手动选择本地文件'));
+
+// ── Init ─────────────────────────────────────────────
+addLine('sys','开发调试面板就绪 — 仅支持 Chrome/Edge');
+addLine('sys','左边烧录（自动加载最新固件），右边串口监视');
+log('就绪 — 固件默认: '+DEFAULT_FW);
+</script>
+</body>
+</html>
