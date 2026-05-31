@@ -665,8 +665,7 @@ void display_show_code(const char *code, const char *service, int expires_in) {
 
     // Countdown: compute expiry HH:MM:SS
     if (g_countdown_label && expires_in > 0) {
-        int64_t exp = esp_timer_get_time() + expires_in * 1000000LL;
-        time_t et = exp / 1000000;
+        time_t et = time(NULL) + expires_in;
         struct tm tm;
         localtime_r(&et, &tm);
         char tbuf[48];
