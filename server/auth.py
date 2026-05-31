@@ -184,7 +184,39 @@ class DeviceStore:
 
     def check_registration(self, mac: str) -> bool:
         """Poll: has this device been registered?"""
-        return mac.upper() in self._devices
+        return mac.upper() in self._devices and not self.is_banned(mac)
+
+    def rename(self, mac: str, name: str) -> bool:
+        mac = mac.upper()
+        if mac not in self._devices: return False
+        self._devices[mac]["name"] = name
+        self._save()
+        return True
+
+    def ban(self, mac: str) -> bool:
+        mac = mac.upper()
+        if mac not in self._devices: return False
+        self._devices[mac]["banned"] = True
+        self._save()
+        return True
+
+    def unban(self, mac: str) -> bool:
+        mac = mac.upper()
+        if mac not in self._devices: return False
+        self._devices[mac]["banned"] = False
+        self._save()
+        return True
+
+    def remove(self, mac: str) -> bool:
+        mac = mac.upper()
+        if mac not in self._devices: return False
+        del self._devices[mac]
+        self._save()
+        return True
+
+    def is_banned(self, mac: str) -> bool:
+        mac = mac.upper()
+        return mac in self._devices and self._devices[mac].get("banned", False)
 
     def gc(self) -> None:
         now = _now()

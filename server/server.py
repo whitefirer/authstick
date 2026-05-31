@@ -188,8 +188,8 @@ async def stick_pending(device: str = Query("")):
 
 
 def _check_device(device_mac: str) -> bool:
-    """Only registered devices can approve/deny login codes."""
-    return devices.is_registered(device_mac)
+    """Only registered, non-banned devices can operate."""
+    return devices.is_registered(device_mac) and not devices.is_banned(device_mac)
 
 
 @app.post("/api/stick/approve")
@@ -266,24 +266,35 @@ input{background:#0f3460;border:1px solid #333;color:#e0e0e0;padding:8px;margin:
 <p>在设备屏幕上查看6位验证码，输入下方：</p>
 <form onsubmit="verifyDevice(event)">
 <input name="code" placeholder="6位数字验证码" maxlength="6" required>
+<input name="devname" placeholder="设备名称（选填）">
 <button class="btn">验证设备</button>
 </form>
 <div id="verify-msg"></div>
 
 <h2>已注册设备 ({DEVICE_COUNT})</h2>
-<table><tr><th>MAC 地址</th><th>名称</th><th>注册时间</th></tr>
+<table><tr><th>MAC</th><th>名称</th><th>状态</th><th>操作</th></tr>
 {DEVICE_ROWS}
 </table>
 
 <script>
+async function api(url,body){return (await fetch(url,{method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify(body||{})})).json();}
 async function verifyDevice(e){e.preventDefault();
   const code=e.target.code.value.trim();
-  const r=await(await fetch('/api/admin/verify-device',{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({code})})).json();
+  const name=e.target.devname.value.trim();
+  let r=await api('/api/admin/verify-device',{code,name});
   document.getElementById('verify-msg').textContent=r.ok
     ?'设备 '+r.mac+' 已注册！':(r.error||'验证失败');
   if(r.ok)location.reload();}
+async function renameDev(mac){
+  const n=prompt('新名称:',''); if(!n)return;
+  await api('/api/admin/rename',{mac,name:n}); location.reload();}
+async function banDev(mac){await api('/api/admin/ban',{mac}); location.reload();}
+async function unbanDev(mac){await api('/api/admin/unban',{mac}); location.reload();}
+async function removeDev(mac){
+  if(!confirm('确认移除设备 '+mac+'?'))return;
+  await api('/api/admin/remove',{mac}); location.reload();}
 </script>
 </body></html>"""
 
@@ -297,8 +308,17 @@ async def admin_page():
     devs = devices.list_registered()
     rows = ""
     for d in devs:
-        rows += f"<tr><td>{d['mac']}</td><td>{d.get('name', '')}</td>" \
-                f"<td>{d.get('registered_at', '')}</td></tr>"
+        banned = d.get('banned', False)
+        status = '<span class="banned">已封禁</span>' if banned else '<span class="status-ok">正常</span>'
+        mac = d['mac']
+        name = d.get('name', mac)
+        rows += f"<tr><td>{mac}</td><td onclick=\"renameDev('{mac}')\" style=\"cursor:pointer\" title=\"点击改名\">{name}</td>" \
+                f"<td>{status}</td>" \
+                f"<td>" \
+                f"<button class=\"btn-sm\" onclick=\"renameDev('{mac}')\">改名</button> " \
+                f"<button class=\"btn-sm\" onclick=\"{'unbanDev' if banned else 'banDev'}('{mac}')\">{'解封' if banned else '封禁'}</button> " \
+                f"<button class=\"btn-sm\" onclick=\"removeDev('{mac}')\">移除</button>" \
+                f"</td></tr>"
     if not rows:
         rows = '<tr><td colspan="3">暂无注册设备</td></tr>'
     html = ADMIN_HTML.replace("{DEVICE_COUNT}", str(len(devs)))
@@ -306,12 +326,47 @@ async def admin_page():
     return HTMLResponse(html)
 
 
+class VerifyDevice(BaseModel):
+    code: str
+    name: str = ""
+
 @app.post("/api/admin/verify-device")
 async def admin_verify_device(body: VerifyDevice):
     mac = devices.register_verify(body.code)
     if mac:
+        if body.name.strip():
+            devices.rename(mac, body.name.strip())
         return {"ok": True, "mac": mac}
     raise HTTPException(404, detail="验证码错误或已过期")
+
+
+class AdminMac(BaseModel):
+    mac: str
+    name: str = ""
+
+@app.post("/api/admin/rename")
+async def admin_rename(body: AdminMac):
+    if devices.rename(body.mac, body.name):
+        return {"ok": True}
+    raise HTTPException(404, detail="设备不存在")
+
+@app.post("/api/admin/ban")
+async def admin_ban(body: AdminMac):
+    if devices.ban(body.mac):
+        return {"ok": True}
+    raise HTTPException(404, detail="设备不存在")
+
+@app.post("/api/admin/unban")
+async def admin_unban(body: AdminMac):
+    if devices.unban(body.mac):
+        return {"ok": True}
+    raise HTTPException(404, detail="设备不存在")
+
+@app.post("/api/admin/remove")
+async def admin_remove(body: AdminMac):
+    if devices.remove(body.mac):
+        return {"ok": True}
+    raise HTTPException(404, detail="设备不存在")
 
 
 # ── main ─────────────────────────────────────────────

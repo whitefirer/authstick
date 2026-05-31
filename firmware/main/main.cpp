@@ -264,6 +264,7 @@ static void sm_tick(void) {
             g_next_poll = now + POLL_INTERVAL_MS * 1000LL;
             auth_pending_code_t codes[4];
             int n = auth_client_poll(codes, 4);
+            if (display_is_menu_active()) break;
             if (n > 0) {
                 display_show_code(codes[0].code, codes[0].service_name, codes[0].expires_in);
                 g_code_expires_at = esp_timer_get_time() + codes[0].expires_in * 1000000LL;
@@ -367,6 +368,7 @@ extern "C" void app_main(void) {
     while (esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET && ++retry < 50) {
         vTaskDelay(pdMS_TO_TICKS(200));
     }
+    setenv("TZ", "CST-8", 1); tzset();
     ESP_LOGI(TAG, "SNTP sync %s", esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED ? "OK" : "FAIL");
 
     // ── Init ────────────────────────────────────────────
@@ -397,9 +399,9 @@ extern "C" void app_main(void) {
         bool menu_active = display_is_menu_active();
 
         menu_page_t mp = display_get_menu();
-        if (mp == MENU_MAIN && btn == BTN_A_SHORT) {
+        if (mp == MENU_MAIN && btn == BTN_B_SHORT) {
             display_menu_next();
-        } else if (mp == MENU_MAIN && (btn == BTN_B_SHORT || btn == BTN_B_LONG)) {
+        } else if (mp == MENU_MAIN && (btn == BTN_A_SHORT || btn == BTN_A_LONG)) {
             display_menu_select();
             if (display_get_menu() == MENU_RECONFIG) {
                 ESP_LOGI(TAG, "Reconfig triggered from menu");
@@ -408,7 +410,10 @@ extern "C" void app_main(void) {
                 wifi.StartConfigAp();
                 display_show_wifi_config(wifi.GetApSsid().c_str());
             }
-        } else if (mp == MENU_USAGE || mp == MENU_ABOUT) {
+        } else if (mp == MENU_USAGE) {
+            if (btn == BTN_A_SHORT) display_usage_scroll_down();
+            else if (btn == BTN_B_SHORT || btn == BTN_B_LONG) display_menu_back();
+        } else if (mp == MENU_ABOUT) {
             if (btn == BTN_A_SHORT || btn == BTN_B_SHORT || btn == BTN_B_LONG)
                 display_menu_back();
         } else if (!menu_active && btn == BTN_A_SHORT) {
