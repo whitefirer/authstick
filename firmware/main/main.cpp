@@ -10,6 +10,7 @@
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "nvs_flash.h"
+#include "esp_sntp.h"
 #include "auth_client.h"
 #include "display.h"
 #include "button.h"
@@ -357,6 +358,16 @@ extern "C" void app_main(void) {
         vTaskDelay(pdMS_TO_TICKS(500));
     }
     ESP_LOGI(TAG, "WiFi connected!");
+
+    // Sync time via SNTP
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_init();
+    int retry = 0;
+    while (esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET && ++retry < 50) {
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+    ESP_LOGI(TAG, "SNTP sync %s", esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED ? "OK" : "FAIL");
 
     // ── Init ────────────────────────────────────────────
     get_server_url(g_server_url, sizeof(g_server_url));

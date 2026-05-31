@@ -670,8 +670,9 @@ void display_show_code(const char *code, const char *service, int expires_in) {
         localtime_r(&et, &tm);
         char tbuf[48];
         snprintf(tbuf, sizeof(tbuf), t(
-            "\xe6\x9c\x89\xe6\x95\x88\xe6\x9c\x9f\xe8\x87\xb3" " %02d:%02d:%02d",
-            "Expires at %02d:%02d:%02d"), tm.tm_hour, tm.tm_min, tm.tm_sec);
+            "\xe6\x9c\x89\xe6\x95\x88\xe6\x9c\x9f\xe8\x87\xb3" " %02d/%02d %02d:%02d:%02d",
+            "Expires %02d/%02d %02d:%02d:%02d"),
+            tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
         lv_label_set_text(g_countdown_label, tbuf);
         lv_obj_set_style_text_color(g_countdown_label, COLOR(0xe94560), 0);
         lv_obj_align_to(g_countdown_label, g_code_label, LV_ALIGN_OUT_BOTTOM_MID, 0, 16);
@@ -694,8 +695,9 @@ void display_update_countdown(int remaining_s) {
         localtime_r(&et, &tm);
         char buf[48];
         snprintf(buf, sizeof(buf), t(
-            "\xe6\x9c\x89\xe6\x95\x88\xe6\x9c\x9f\xe8\x87\xb3" " %02d:%02d:%02d",
-            "Expires at %02d:%02d:%02d"), tm.tm_hour, tm.tm_min, tm.tm_sec);
+            "\xe6\x9c\x89\xe6\x95\x88\xe6\x9c\x9f\xe8\x87\xb3" " %02d/%02d %02d:%02d:%02d",
+            "Expires %02d/%02d %02d:%02d:%02d"),
+            tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
         lv_label_set_text(g_countdown_label, buf);
     }
     give_lock();
