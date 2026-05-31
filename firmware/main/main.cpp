@@ -265,7 +265,7 @@ static void sm_tick(void) {
             auth_pending_code_t codes[4];
             int n = auth_client_poll(codes, 4);
             if (n > 0) {
-                if (display_is_menu_active()) {
+                if (display_has_overlay()) {
                     g_code_expires_at = esp_timer_get_time() + codes[0].expires_in * 1000000LL;
                     break;
                 }
@@ -400,36 +400,36 @@ extern "C" void app_main(void) {
 
         // ── Button handling ──────────────────────────────
         button_event_t btn = button_poll();
-        bool menu_active = display_is_menu_active();
+        bool has_overlay = display_has_overlay();
+        overlay_page_t ov = display_get_overlay();
 
-        menu_page_t mp = display_get_menu();
-        if (mp == MENU_MAIN && btn == BTN_B_SHORT) {
+        if (ov == OVERLAY_MENU && btn == BTN_B_SHORT) {
             display_menu_next();
-        } else if (mp == MENU_MAIN && (btn == BTN_A_SHORT || btn == BTN_A_LONG)) {
+        } else if (ov == OVERLAY_MENU && (btn == BTN_A_SHORT || btn == BTN_A_LONG)) {
             display_menu_select();
-        } else if (mp == MENU_RECONFIG) {
+        } else if (ov == OVERLAY_RESET_CONFIRM) {
             if (btn == BTN_A_SHORT || btn == BTN_A_LONG) {
                 ESP_LOGI(TAG, "Factory reset confirmed");
                 nvs_flash_erase();
                 esp_restart();
             } else if (btn == BTN_B_SHORT || btn == BTN_B_LONG) {
-                display_show_menu(); // cancel
+                display_show_menu();
             }
-        } else if (mp == MENU_USAGE || mp == MENU_ABOUT) {
+        } else if (ov == OVERLAY_USAGE || ov == OVERLAY_ABOUT) {
             if (btn == BTN_A_SHORT || btn == BTN_B_SHORT || btn == BTN_B_LONG)
-                display_menu_back();
-        } else if (!menu_active && btn == BTN_A_SHORT) {
+                display_show_menu();
+        } else if (!has_overlay && btn == BTN_A_SHORT) {
             static bool screen_off = false;
             screen_off = !screen_off;
             display_set_backlight(!screen_off);
-        } else if (!menu_active && (btn == BTN_B_SHORT || btn == BTN_B_LONG)) {
+        } else if (!has_overlay && (btn == BTN_B_SHORT || btn == BTN_B_LONG)) {
             display_show_menu();
         }
 
-        // Code expiry — return to idle when code expires (skip if menu open)
+        // Code expiry — skip if overlay active
         if (g_code_expires_at > 0 && esp_timer_get_time() > g_code_expires_at) {
             g_code_expires_at = 0;
-            if (!display_is_menu_active()) display_show_idle();
+            if (!display_has_overlay()) display_show_idle();
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));
