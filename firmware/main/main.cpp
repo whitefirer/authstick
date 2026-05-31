@@ -406,15 +406,15 @@ extern "C" void app_main(void) {
             display_menu_next();
         } else if (mp == MENU_MAIN && (btn == BTN_A_SHORT || btn == BTN_A_LONG)) {
             display_menu_select();
-            if (display_get_menu() == MENU_RECONFIG) {
-                ESP_LOGI(TAG, "Factory reset triggered from menu");
+        } else if (mp == MENU_RECONFIG) {
+            if (btn == BTN_A_SHORT || btn == BTN_A_LONG) {
+                ESP_LOGI(TAG, "Factory reset confirmed");
                 nvs_flash_erase();
                 esp_restart();
+            } else if (btn == BTN_B_SHORT || btn == BTN_B_LONG) {
+                display_show_menu(); // cancel
             }
         } else if (mp == MENU_USAGE || mp == MENU_ABOUT) {
-            if (btn == BTN_A_SHORT || btn == BTN_B_SHORT || btn == BTN_B_LONG)
-                display_menu_back();
-        } else if (!menu_active && btn == BTN_A_SHORT) {
             static bool screen_off = false;
             screen_off = !screen_off;
             display_set_backlight(!screen_off);

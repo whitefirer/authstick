@@ -188,9 +188,37 @@ void display_menu_select(void) {
         display_toggle_language();
         display_show_menu(); // refresh menu
         break;
-    case 2: // Factory Reset
-        g_menu_page = MENU_RECONFIG;  // reuse the trigger
+    case 2: // Factory Reset — show confirmation
         menu_clear();
+        g_menu_panel = lv_obj_create(g_screen);
+        lv_obj_remove_style_all(g_menu_panel);
+        lv_obj_set_size(g_menu_panel, W - 8, H - 36);
+        lv_obj_set_style_bg_color(g_menu_panel, COLOR(0x13131f), 0);
+        lv_obj_set_style_radius(g_menu_panel, 8, 0);
+        lv_obj_set_style_pad_all(g_menu_panel, 12, 0);
+        lv_obj_align(g_menu_panel, LV_ALIGN_CENTER, 0, 0);
+
+        g_menu_title = lv_label_create(g_menu_panel);
+        lv_obj_set_style_text_font(g_menu_title, &BUILTIN_TEXT_FONT, 0);
+        lv_obj_set_style_text_color(g_menu_title, COLOR(0xe94560), 0);
+        lv_label_set_text(g_menu_title, t("\xe6\x81\xa2\xe5\xa4\x8d\xe5\x87\xba\xe5\x8e\x82\xe8\xae\xbe\xe7\xbd\xae", "Factory Reset"));
+
+        g_menu_items[0] = lv_label_create(g_menu_panel);
+        lv_obj_set_style_text_font(g_menu_items[0], &BUILTIN_TEXT_FONT, 0);
+        lv_obj_set_style_text_color(g_menu_items[0], COLOR(0xccccdd), 0);
+        lv_label_set_text(g_menu_items[0], t(
+            "\xe5\xb0\x86\xe6\xb8\x85\xe9\x99\xa4\xe6\x89\x80\xe6\x9c\x89\xe9\x85\x8d\xe7\xbd\xae\n\xe5\xb9\xb6\xe9\x87\x8d\xe5\x90\xaf\xe8\xae\xbe\xe5\xa4\x87",
+            "This will erase all settings\nand restart the device"));
+        lv_obj_align_to(g_menu_items[0], g_menu_title, LV_ALIGN_OUT_BOTTOM_MID, 0, 16);
+
+        g_menu_items[1] = lv_label_create(g_menu_panel);
+        lv_obj_set_style_text_font(g_menu_items[1], &BUILTIN_TEXT_FONT, 0);
+        lv_obj_set_style_text_color(g_menu_items[1], COLOR(0xe94560), 0);
+        lv_label_set_text(g_menu_items[1], t(
+            "A:\xe7\xa1\xae\xe8\xae\xa4  B:\xe5\x8f\x96\xe6\xb6\x88",
+            "A:Confirm  B:Cancel"));
+        lv_obj_align(g_menu_items[1], LV_ALIGN_BOTTOM_MID, 0, -4);
+        g_menu_page = MENU_RECONFIG;
         break;
     case 3: // About
         g_menu_page = MENU_ABOUT;
@@ -624,7 +652,14 @@ void display_show_connecting(void) {
     lv_obj_set_style_bg_color(g_screen, COLOR(0x1a1a2e), 0);
     lv_label_set_text(g_status_label, t("\xe6\xad\xa3\xe5\x9c\xa8\xe8\xbf\x9e\xe6\x8e\xa5...", "Connecting..."));
     lv_obj_set_style_text_color(g_status_label, COLOR(0xe94560), 0);
-    set_hidden(g_code_label, true);
+    lv_obj_set_style_text_font(g_code_label, &BUILTIN_TEXT_FONT, 0);
+    lv_obj_set_width(g_code_label, W - 32);
+    lv_label_set_long_mode(g_code_label, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(g_code_label, t(
+        "\xe6\xad\xa3\xe5\x9c\xa8\xe8\xbf\x9e\xe6\x8e\xa5WiFi\n\xe8\xaf\xb7\xe7\xa8\x8d\xe5\x80\x99...",
+        "Connecting to WiFi\nPlease wait..."));
+    lv_obj_set_style_text_color(g_code_label, COLOR(0x4ade80), 0);
+    set_hidden(g_code_label, false);
     set_hidden(g_countdown_label, true);
     set_hidden(g_hint_label, true);
     give_lock();
