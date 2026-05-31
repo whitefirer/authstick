@@ -228,7 +228,9 @@ void display_menu_select(void) {
         lv_obj_set_style_text_font(g_overlay_items[0], &BUILTIN_TEXT_FONT, 0);
         lv_obj_set_style_text_color(g_overlay_items[0], COLOR(0xccccdd), 0);
         lv_obj_set_style_text_align(g_overlay_items[0], LV_TEXT_ALIGN_CENTER, 0);
-        { char buf[64]; snprintf(buf, sizeof(buf), "AuthStick v1.0\nby whitefirer\n\nMAC: %s", g_mac); lv_label_set_text(g_overlay_items[0], buf); }
+        lv_obj_set_width(g_overlay_items[0], W - 32);
+        lv_label_set_long_mode(g_overlay_items[0], LV_LABEL_LONG_WRAP);
+        { char buf[80]; snprintf(buf, sizeof(buf), "AuthStick v1.0\nby whitefirer\n\nMAC: %s", g_mac); lv_label_set_text(g_overlay_items[0], buf); }
         lv_obj_align(g_overlay_items[0], LV_ALIGN_CENTER, 0, -8);
         g_overlay_items[1] = lv_label_create(g_overlay);
         lv_obj_set_style_text_font(g_overlay_items[1], &BUILTIN_TEXT_FONT, 0);
@@ -252,6 +254,11 @@ void display_show_idle(void) {
     lv_obj_set_style_bg_color(g_screen, COLOR(0x1a1a2e), 0);
     lv_label_set_text(g_status_label, "AuthStick");
     lv_obj_set_style_text_color(g_status_label, COLOR(0x888899), 0);
+    g_label_hint = lv_label_create(g_page_base);
+    lv_obj_set_style_text_font(g_label_hint, &BUILTIN_TEXT_FONT, 0);
+    lv_obj_set_style_text_color(g_label_hint, COLOR(0x666688), 0);
+    lv_label_set_text(g_label_hint, t("A:\xe7\x86\x84\xe5\xb1\x8f  B:\xe8\x8f\x9c\xe5\x8d\x95", "A:Screen  B:Menu"));
+    lv_obj_align(g_label_hint, LV_ALIGN_BOTTOM_MID, 0, -4);
     give_lock();
 }
 
@@ -269,6 +276,11 @@ void display_show_connecting(void) {
     lv_obj_set_style_text_align(g_label_code, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(g_label_code, t("\xe6\xad\xa3\xe5\x9c\xa8\xe8\xbf\x9e\xe6\x8e\xa5WiFi\n\xe8\xaf\xb7\xe7\xa8\x8d\xe5\x80\x99...", "Connecting to WiFi\nPlease wait..."));
     lv_obj_center(g_label_code);
+    g_label_hint = lv_label_create(g_page_base);
+    lv_obj_set_style_text_font(g_label_hint, &BUILTIN_TEXT_FONT, 0);
+    lv_obj_set_style_text_color(g_label_hint, COLOR(0x666688), 0);
+    lv_label_set_text(g_label_hint, t("A:\xe7\x86\x84\xe5\xb1\x8f", "A:Screen Off"));
+    lv_obj_align(g_label_hint, LV_ALIGN_BOTTOM_MID, 0, -4);
     give_lock();
     display_set_brightness(128);
 }
@@ -298,6 +310,11 @@ void display_show_wifi_config(const char *ap_ssid) {
     lv_label_set_long_mode(g_label_sub, LV_LABEL_LONG_WRAP);
     lv_label_set_text(g_label_sub, "\xe5\xb9\xb6\xe8\xae\xbf\xe9\x97\xae" "192.168.4.1\xe9\x85\x8d\xe7\xbd\xaeWifi\xe5\x92\x8c\xe8\xae\xa4\xe8\xaf\x81\xe6\x9c\x8d\xe5\x8a\xa1\xe5\x9c\xb0\xe5\x9d\x80");
     lv_obj_align_to(g_label_sub, g_label_code, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
+    g_label_hint = lv_label_create(g_page_base);
+    lv_obj_set_style_text_font(g_label_hint, &BUILTIN_TEXT_FONT, 0);
+    lv_obj_set_style_text_color(g_label_hint, COLOR(0x666688), 0);
+    lv_label_set_text(g_label_hint, t("A:\xe7\x86\x84\xe5\xb1\x8f  B:\xe8\x8f\x9c\xe5\x8d\x95", "A:Screen  B:Menu"));
+    lv_obj_align(g_label_hint, LV_ALIGN_BOTTOM_MID, 0, -4);
     give_lock();
 }
 
