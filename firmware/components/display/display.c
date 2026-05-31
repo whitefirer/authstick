@@ -61,7 +61,12 @@ static bool g_lang_en = false;
 static int g_wifi_rssi = 0;
 static int g_battery_pct = -1;
 static bool g_battery_charging = false;
+static char g_mac[18] = "";
 static bool g_wifi_connected = false;
+
+void display_set_mac(const char *mac) {
+    if (mac) { strncpy(g_mac, mac, sizeof(g_mac) - 1); g_mac[sizeof(g_mac) - 1] = 0; }
+}
 
 #define COLOR(hex) lv_color_hex(hex)
 
@@ -305,7 +310,9 @@ void display_show_about(void) {
     lv_obj_set_style_text_font(g_menu_items[0], &BUILTIN_TEXT_FONT, 0);
     lv_obj_set_style_text_color(g_menu_items[0], COLOR(0xccccdd), 0);
     lv_obj_set_style_text_align(g_menu_items[0], LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(g_menu_items[0], "AuthStick v1.0\nby whitefirer");
+    char about_buf[64];
+    snprintf(about_buf, sizeof(about_buf), "AuthStick v1.0\nby whitefirer\n\nMAC: %s", g_mac);
+    lv_label_set_text(g_menu_items[0], about_buf);
     lv_obj_align(g_menu_items[0], LV_ALIGN_CENTER, 0, 0);
 
     // Back hint

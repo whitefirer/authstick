@@ -40,6 +40,7 @@ void display_set_wifi_connected(bool connected);
 void display_set_config_mode(bool active);
 void display_set_battery(int pct, bool charging);
 void display_set_device_name(const char *name);
+void display_set_mac(const char *mac);
 
 // Menu
 menu_page_t display_get_menu(void);

@@ -378,6 +378,7 @@ extern "C" void app_main(void) {
     get_server_url(g_server_url, sizeof(g_server_url));
     auth_client_init(g_server_url);
     auth_client_get_mac(g_mac);
+    display_set_mac(g_mac);
     button_init();
     vTaskPrioritySet(nullptr, 10);
 
