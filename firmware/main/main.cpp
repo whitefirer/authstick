@@ -408,15 +408,10 @@ extern "C" void app_main(void) {
             display_show_menu();
         }
 
-        // Code expiry & countdown update
-        if (g_code_expires_at > 0) {
-            if (esp_timer_get_time() > g_code_expires_at) {
-                g_code_expires_at = 0;
-                display_show_idle();
-            } else {
-                int remaining = (g_code_expires_at - esp_timer_get_time()) / 1000000;
-                display_update_countdown(remaining);
-            }
+        // Code expiry — return to idle when code expires
+        if (g_code_expires_at > 0 && esp_timer_get_time() > g_code_expires_at) {
+            g_code_expires_at = 0;
+            display_show_idle();
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));
