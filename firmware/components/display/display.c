@@ -19,7 +19,6 @@
 
 LV_FONT_DECLARE(BUILTIN_TEXT_FONT);
 LV_FONT_DECLARE(BUILTIN_ICON_FONT);
-LV_FONT_DECLARE(BUILTIN_CODE_FONT);
 
 static const char *TAG = "display";
 
@@ -30,6 +29,7 @@ static const char *TAG = "display";
 #define LCD_Y_GAP 40
 #define PIXEL_CLOCK_HZ (20 * 1000 * 1000)
 #define BAR_H 20
+#define CODE_SCALE 512  // 2x for code
 
 static lv_display_t *g_display = NULL;
 static lv_obj_t *g_screen = NULL;
@@ -197,11 +197,7 @@ void display_menu_select(void) {
 }
 
 void display_menu_back(void) {
-    if (g_menu_page == MENU_USAGE || g_menu_page == MENU_ABOUT || g_menu_page == MENU_LANGUAGE) {
-        menu_clear();
-        g_menu_page = MENU_NONE;
-        display_show_idle();
-    } else if (g_menu_page != MENU_NONE) {
+    if (g_menu_page == MENU_USAGE || g_menu_page == MENU_ABOUT) {
         display_show_menu();
     }
 }
@@ -470,12 +466,14 @@ void display_init(void) {
     lv_label_set_text(g_status_label, "AuthStick");
     lv_obj_center(g_status_label);
 
-    // ── Code label (16px 4bpp, anti-aliased) ────────
+    // ── Code label (14px 2x scaled, pivot top-left) ──
     g_code_label = lv_label_create(g_screen);
-    lv_obj_set_style_text_font(g_code_label, &BUILTIN_CODE_FONT, 0);
+    lv_obj_set_style_text_font(g_code_label, &BUILTIN_TEXT_FONT, 0);
     lv_obj_set_style_text_color(g_code_label, COLOR(0xffffff), 0);
     lv_obj_set_style_text_align(g_code_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(g_code_label, W - 16);
+    lv_obj_set_style_transform_pivot_x(g_code_label, 0, 0);
+    lv_obj_set_style_transform_pivot_y(g_code_label, 0, 0);
     lv_label_set_text(g_code_label, "");
     lv_obj_align(g_code_label, LV_ALIGN_CENTER, 0, 0);
     set_hidden(g_code_label, true);
@@ -631,6 +629,8 @@ void display_show_wifi_config(const char *ap_ssid) {
     lv_obj_set_style_bg_color(g_screen, COLOR(0x1a1a2e), 0);
     lv_label_set_text(g_status_label, "AuthStick");
     lv_obj_set_style_text_color(g_status_label, COLOR(0x888899), 0);
+    lv_obj_set_style_transform_scale_x(g_code_label, 256, 0);
+    lv_obj_set_style_transform_scale_y(g_code_label, 256, 0);
     char buf[64];
     snprintf(buf, sizeof(buf), "\xe8\xaf\xb7\xe8\xbf\x9e\xe6\x8e\xa5\xe7\x83\xad\xe7\x82\xb9 %s", ap_ssid);
     lv_label_set_text(g_code_label, buf);
@@ -650,6 +650,8 @@ void display_show_code(const char *code, const char *service, int expires_in) {
     g_state = AUTH_STATE_PENDING;
     take_lock();
     lv_obj_set_style_bg_color(g_screen, COLOR(0x1a1a2e), 0);
+    lv_obj_set_style_transform_scale_x(g_code_label, CODE_SCALE, 0);
+    lv_obj_set_style_transform_scale_y(g_code_label, CODE_SCALE, 0);
 
     if (service && service[0]) {
         lv_label_set_text(g_status_label, service);
