@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="AuthStick — ESP32 认证终端。每台设备独立 MAC 地址，验证码精准送达，物理按键审批。">
+<meta name="description" content="AuthStick — ESP32 硬件认证终端。每台设备独立 MAC 地址，验证码精准送达设备屏幕，网页输入验证。">
 <title>AuthStick — 独立认证终端</title>
 <style>
 :root {
@@ -238,11 +238,11 @@ footer a:hover{text-decoration:underline}
 <section class="hero">
   <div class="section-inner">
     <span class="hero-badge">M5Stack StickS3 · ESP32-S3</span>
-    <h1>每台设备独立 MAC 地址<br><em>验证码精准送达，物理按键审批</em></h1>
+    <h1>每台设备独立 MAC 地址<br><em>验证码精准送达，网页输入验证</em></h1>
     <p class="lead">
-      打开登录页的瞬间，服务器根据设备 MAC 地址将验证码推送到你的 StickS3 屏幕。
-      按下正面按钮批准、侧面按钮拒绝——不走语音、不需输入，
-      代码出现在对的设备上。
+      打开登录页的瞬间，服务器将验证码推送到你的 StickS3 屏幕。
+      在设备上查看验证码，直接在网页输入提交——物理隔离，
+      代码只出现在对的设备上。
     </p>
   </div>
 </section>
@@ -265,7 +265,7 @@ footer a:hover{text-decoration:underline}
       <div class="problem-card">
         <div class="label">设备混用</div>
         <h3>多设备无隔离</h3>
-        <p>多个终端共享同一套认证系统时，验证码出现在谁的屏幕上？没有设备级身份，审批来源不可追溯。</p>
+        <p>多个终端共享同一套认证系统时，验证码出现在谁的屏幕上？没有设备级身份，验证来源不可追溯。</p>
       </div>
     </div>
   </div>
@@ -277,16 +277,16 @@ footer a:hover{text-decoration:underline}
     <h2>三步完成认证</h2>
     <div class="flow-steps">
       <div class="flow-step">
-        <h3>网页生成验证码</h3>
-        <p>用户打开登录页面，AuthStick 服务端生成 4 位数字验证码并存入待审批池。</p>
+        <h3>网页请求验证码</h3>
+        <p>用户打开登录页面，AuthStick 服务端生成 4 位数字验证码。</p>
       </div>
       <div class="flow-step">
-        <h3>Stick 轮询拉取</h3>
-        <p>StickS3 每 3 秒轮询服务端，带上自己的 MAC 地址。服务端返回当前待审批的验证码到对应设备屏幕。</p>
+        <h3>Stick 轮询显示</h3>
+        <p>StickS3 每 3 秒轮询服务端，带上自己的 MAC 地址。服务端返回验证码到对应设备屏幕。</p>
       </div>
       <div class="flow-step">
-        <h3>按键审批 · 即时跳转</h3>
-        <p>正面按键批准 · 侧面按键拒绝。按下瞬间服务端签发 session，网页自动跳转登录。</p>
+        <h3>网页输入 · 即时验证</h3>
+        <p>在设备上查看验证码，回到网页输入提交。验证通过后自动跳转登录。</p>
       </div>
     </div>
   </div>
@@ -295,12 +295,12 @@ footer a:hover{text-decoration:underline}
 <!-- ── features ───────────────────── -->
 <section class="features">
   <div class="section-inner">
-    <h2>不止于审批</h2>
+    <h2>核心特性</h2>
     <div class="features-grid">
       <div class="feature-card">
         <div class="icon">🛡️</div>
         <h3>设备注册机制</h3>
-        <p>首次使用需在管理后台输入 6 位验证码绑定设备 MAC，未注册设备无法审批，物理地址天然防冒用。</p>
+        <p>首次使用需在管理后台输入验证码绑定设备 MAC，未注册设备无法接收验证码，物理地址天然防冒用。</p>
       </div>
       <div class="feature-card">
         <div class="icon">📡</div>
@@ -309,8 +309,8 @@ footer a:hover{text-decoration:underline}
       </div>
       <div class="feature-card">
         <div class="icon">⚡</div>
-        <h3>实时倒计时</h3>
-        <p>验证码 5 分钟有效，屏幕实时倒计时。超时自动刷新，过期码无法审批。</p>
+        <h3>有效期倒计时</h3>
+        <p>验证码 5 分钟有效，屏幕显示精确过期时刻。超时自动刷新。</p>
       </div>
       <div class="feature-card">
         <div class="icon">🔌</div>
