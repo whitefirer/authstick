@@ -1,7 +1,7 @@
 set(BUILTIN_TEXT_FONT font_puhui_14_1)
 set(BUILTIN_ICON_FONT font_awesome_14_1)
 
-idf_component_register(SRCS "display.c"
+idf_component_register(SRCS "display.c" "font_digits_30_4.c"
                     INCLUDE_DIRS "."
                     REQUIRES driver esp_lcd esp_timer lvgl esp_lvgl_port 78__xiaozhi-fonts)
 
