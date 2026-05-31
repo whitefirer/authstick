@@ -117,9 +117,6 @@ void display_show_menu(void) {
     if (!g_initialized) return;
     take_lock();
     menu_clear();
-    set_hidden(g_code_label, true);
-    set_hidden(g_countdown_label, true);
-    set_hidden(g_hint_label, true);
     g_menu_page = MENU_MAIN;
     g_menu_idx = 0;
 
@@ -224,26 +221,21 @@ void display_menu_select(void) {
         g_menu_page = MENU_ABOUT;
         display_show_about();
         break;
-    case 4: // Back
+    case 4: // Back — just close menu, keep underlying screen
         menu_clear();
         g_menu_page = MENU_NONE;
-        display_show_idle();
         break;
     }
 }
 
 void display_menu_back(void) {
-    if (g_menu_page == MENU_USAGE || g_menu_page == MENU_ABOUT) {
-        display_show_menu();
-    }
+    menu_clear();
+    g_menu_page = MENU_NONE;
 }
 
 void display_show_usage(void) {
     if (!g_initialized) return;
     take_lock();
-    set_hidden(g_code_label, true);
-    set_hidden(g_countdown_label, true);
-    set_hidden(g_hint_label, true);
 
     menu_clear();
     g_menu_panel = lv_obj_create(g_screen);
@@ -294,9 +286,6 @@ void display_show_usage(void) {
 void display_show_about(void) {
     if (!g_initialized) return;
     take_lock();
-    set_hidden(g_code_label, true);
-    set_hidden(g_countdown_label, true);
-    set_hidden(g_hint_label, true);
 
     menu_clear();
     g_menu_panel = lv_obj_create(g_screen);
