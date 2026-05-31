@@ -1,4 +1,5 @@
 set(BUILTIN_TEXT_FONT font_puhui_14_1)
+set(BUILTIN_CODE_FONT font_puhui_16_4)
 set(BUILTIN_ICON_FONT font_awesome_14_1)
 
 idf_component_register(SRCS "display.c"
@@ -7,4 +8,5 @@ idf_component_register(SRCS "display.c"
 
 target_compile_definitions(${COMPONENT_LIB}
     PRIVATE BUILTIN_TEXT_FONT=${BUILTIN_TEXT_FONT}
+            BUILTIN_CODE_FONT=${BUILTIN_CODE_FONT}
             BUILTIN_ICON_FONT=${BUILTIN_ICON_FONT})
