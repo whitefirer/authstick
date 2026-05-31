@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -649,8 +650,12 @@ void display_show_code(const char *code, const char *service, int expires_in) {
     lv_obj_set_style_bg_color(g_screen, COLOR(0x1a1a2e), 0);
     lv_obj_set_style_text_font(g_code_label, &font_digits_30_4, 0);
 
-    if (service && service[0]) {
-        lv_label_set_text(g_status_label, service);
+    // Translate known service names
+    const char *svc = service;
+    if (service && strcmp(service, "RegCode") == 0)
+        svc = t("\xe6\xb3\xa8\xe5\x86\x8c\xe7\xa0\x81", "RegCode");
+    if (svc && svc[0]) {
+        lv_label_set_text(g_status_label, svc);
         lv_obj_set_style_text_color(g_status_label, COLOR(0x888899), 0);
     }
 
@@ -658,12 +663,19 @@ void display_show_code(const char *code, const char *service, int expires_in) {
     lv_obj_set_style_text_color(g_code_label, COLOR(0xffffff), 0);
     set_hidden(g_code_label, false);
 
-    // Hint: expiry info
-    if (g_countdown_label) {
-        lv_label_set_text(g_countdown_label, t(
-            "\xe6\xb3\xa8\xe5\x86\x8c\xe7\xa0\x81" "5\xe5\x88\x86\xe9\x92\x9f\xe5\x86\x85\xe6\x9c\x89\xe6\x95\x88",
-            "Code valid for 5 minutes"));
+    // Countdown: compute expiry HH:MM:SS
+    if (g_countdown_label && expires_in > 0) {
+        int64_t exp = esp_timer_get_time() + expires_in * 1000000LL;
+        time_t et = exp / 1000000;
+        struct tm tm;
+        localtime_r(&et, &tm);
+        char tbuf[48];
+        snprintf(tbuf, sizeof(tbuf), t(
+            "\xe6\x9c\x89\xe6\x95\x88\xe6\x9c\x9f\xe8\x87\xb3" " %02d:%02d:%02d",
+            "Expires at %02d:%02d:%02d"), tm.tm_hour, tm.tm_min, tm.tm_sec);
+        lv_label_set_text(g_countdown_label, tbuf);
         lv_obj_set_style_text_color(g_countdown_label, COLOR(0xe94560), 0);
+        lv_obj_align_to(g_countdown_label, g_code_label, LV_ALIGN_OUT_BOTTOM_MID, 0, 16);
         set_hidden(g_countdown_label, false);
     }
 
@@ -677,11 +689,16 @@ void display_show_code(const char *code, const char *service, int expires_in) {
 void display_update_countdown(int remaining_s) {
     if (!g_initialized) return;
     take_lock();
-    char buf[48];
-    snprintf(buf, sizeof(buf), t(
-        "\xe6\xb3\xa8\xe5\x86\x8c\xe7\xa0\x81" "5\xe5\x88\x86\xe9\x92\x9f\xe5\x86\x85\xe6\x9c\x89\xe6\x95\x88",
-        "Code valid for 5 minutes"));
-    if (g_countdown_label) lv_label_set_text(g_countdown_label, buf);
+    if (g_countdown_label) {
+        time_t et = time(NULL) + remaining_s;
+        struct tm tm;
+        localtime_r(&et, &tm);
+        char buf[48];
+        snprintf(buf, sizeof(buf), t(
+            "\xe6\x9c\x89\xe6\x95\x88\xe6\x9c\x9f\xe8\x87\xb3" " %02d:%02d:%02d",
+            "Expires at %02d:%02d:%02d"), tm.tm_hour, tm.tm_min, tm.tm_sec);
+        lv_label_set_text(g_countdown_label, buf);
+    }
     give_lock();
 }
 
