@@ -471,7 +471,7 @@ void display_init(void) {
     lv_obj_set_style_text_font(g_code_label, &BUILTIN_TEXT_FONT, 0);
     lv_obj_set_style_text_color(g_code_label, COLOR(0xffffff), 0);
     lv_obj_set_style_text_align(g_code_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(g_code_label, W - 16);
+    lv_obj_set_width(g_code_label, LV_SIZE_CONTENT);
     lv_label_set_text(g_code_label, "");
     lv_obj_align(g_code_label, LV_ALIGN_CENTER, 0, 0);
     set_hidden(g_code_label, true);
