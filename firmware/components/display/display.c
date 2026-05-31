@@ -122,6 +122,9 @@ void display_show_menu(void) {
     if (!g_initialized) return;
     take_lock();
     menu_clear();
+    set_hidden(g_code_label, true);
+    set_hidden(g_countdown_label, true);
+    set_hidden(g_hint_label, true);
     g_menu_page = MENU_MAIN;
     g_menu_idx = 0;
 
@@ -226,7 +229,7 @@ void display_menu_select(void) {
         g_menu_page = MENU_ABOUT;
         display_show_about();
         break;
-    case 4: // Back — just close menu, keep underlying screen
+    case 4: // Back — just close menu overlay
         menu_clear();
         g_menu_page = MENU_NONE;
         break;
@@ -234,8 +237,12 @@ void display_menu_select(void) {
 }
 
 void display_menu_back(void) {
-    menu_clear();
-    g_menu_page = MENU_NONE;
+    if (g_menu_page == MENU_USAGE || g_menu_page == MENU_ABOUT) {
+        display_show_menu();
+    } else {
+        menu_clear();
+        g_menu_page = MENU_NONE;
+    }
 }
 
 void display_show_usage(void) {
@@ -630,7 +637,6 @@ void display_draw_status_bar(void) {
 void display_show_idle(void) {
     if (!g_initialized) return;
     g_state = AUTH_STATE_IDLE;
-    if (g_menu_page != MENU_NONE) { menu_clear(); g_menu_page = MENU_NONE; }
     take_lock();
     lv_obj_set_style_bg_color(g_screen, COLOR(0x1a1a2e), 0);
     lv_label_set_text(g_status_label, "AuthStick");
