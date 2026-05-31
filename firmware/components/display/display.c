@@ -129,7 +129,7 @@ void display_show_menu(void) {
     lv_obj_set_style_bg_color(g_menu_panel, COLOR(0x13131f), 0);
     lv_obj_set_style_radius(g_menu_panel, 8, 0);
     lv_obj_set_style_pad_all(g_menu_panel, 12, 0);
-    lv_obj_align(g_menu_panel, LV_ALIGN_CENTER, -4, 0);
+    lv_obj_align(g_menu_panel, LV_ALIGN_CENTER, -8, 0);
 
     g_menu_title = lv_label_create(g_menu_panel);
     lv_obj_set_style_text_font(g_menu_title, &BUILTIN_TEXT_FONT, 0);
@@ -137,14 +137,14 @@ void display_show_menu(void) {
     lv_label_set_text(g_menu_title, t("\xe8\x8f\x9c\xe5\x8d\x95", "Menu"));
 
     static const char *items[] = {
-        "\xe9\x87\x8d\xe6\x96\xb0\xe9\x85\x8d\xe7\xbd\xae",  // 重新配置
         "\xe4\xbd\xbf\xe7\x94\xa8\xe8\xaf\xb4\xe6\x98\x8e",  // 使用说明
         "\xe8\xaf\xad\xe8\xa8\x80 / Language",                // 语言
+        "\xe6\x81\xa2\xe5\xa4\x8d\xe5\x87\xba\xe5\x8e\x82\xe8\xae\xbe\xe7\xbd\xae",  // 恢复出厂设置
         "\xe5\x85\xb3\xe4\xba\x8e",                           // 关于
         "\xe8\xbf\x94\xe5\x9b\x9e",                           // 返回
     };
     static const char *items_en[] = {
-        "Reconfigure", "How to Use", "Language", "About", "Back",
+        "How to Use", "Language", "Factory Reset", "About", "Back",
     };
 
     for (int i = 0; i < 5; i++) {
@@ -179,19 +179,18 @@ void display_menu_next(void) {
 void display_menu_select(void) {
     if (g_menu_page != MENU_MAIN) return;
     switch (g_menu_idx) {
-    case 0: // Reconfig
-        g_menu_page = MENU_RECONFIG;
-        display_start_reconfig();
-        menu_clear();
-        break;
-    case 1: // Usage
+    case 0: // Usage
         g_menu_page = MENU_USAGE;
         display_show_usage();
         break;
-    case 2: // Language
+    case 1: // Language
         g_menu_page = MENU_LANGUAGE;
         display_toggle_language();
         display_show_menu(); // refresh menu
+        break;
+    case 2: // Factory Reset
+        g_menu_page = MENU_RECONFIG;  // reuse the trigger
+        menu_clear();
         break;
     case 3: // About
         g_menu_page = MENU_ABOUT;
@@ -227,7 +226,7 @@ void display_show_usage(void) {
     lv_obj_set_style_pad_all(g_menu_panel, 12, 0);
     lv_obj_set_scrollbar_mode(g_menu_panel, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_scroll_dir(g_menu_panel, LV_DIR_VER);
-    lv_obj_align(g_menu_panel, LV_ALIGN_CENTER, -4, 0);
+    lv_obj_align(g_menu_panel, LV_ALIGN_CENTER, -8, 0);
 
     g_menu_title = lv_label_create(g_menu_panel);
     lv_obj_set_style_text_font(g_menu_title, &BUILTIN_TEXT_FONT, 0);
@@ -272,7 +271,7 @@ void display_show_usage(void) {
 void display_usage_scroll_down(void) {
     if (!g_menu_panel) return;
     take_lock();
-    lv_obj_scroll_by(g_menu_panel, 0, 80, LV_ANIM_ON);
+    lv_obj_scroll_by(g_menu_panel, 0, -80, LV_ANIM_ON);
     give_lock();
 }
 
@@ -290,7 +289,7 @@ void display_show_about(void) {
     lv_obj_set_style_bg_color(g_menu_panel, COLOR(0x13131f), 0);
     lv_obj_set_style_radius(g_menu_panel, 8, 0);
     lv_obj_set_style_pad_all(g_menu_panel, 12, 0);
-    lv_obj_align(g_menu_panel, LV_ALIGN_CENTER, -4, 0);
+    lv_obj_align(g_menu_panel, LV_ALIGN_CENTER, -8, 0);
 
     g_menu_title = lv_label_create(g_menu_panel);
     lv_obj_set_style_text_font(g_menu_title, &BUILTIN_TEXT_FONT, 0);

@@ -264,8 +264,11 @@ static void sm_tick(void) {
             g_next_poll = now + POLL_INTERVAL_MS * 1000LL;
             auth_pending_code_t codes[4];
             int n = auth_client_poll(codes, 4);
-            if (display_is_menu_active()) break;
             if (n > 0) {
+                if (display_is_menu_active()) {
+                    g_code_expires_at = esp_timer_get_time() + codes[0].expires_in * 1000000LL;
+                    break;
+                }
                 display_show_code(codes[0].code, codes[0].service_name, codes[0].expires_in);
                 g_code_expires_at = esp_timer_get_time() + codes[0].expires_in * 1000000LL;
                 ESP_LOGI(TAG, "Auth code: %s", codes[0].code);
@@ -404,11 +407,9 @@ extern "C" void app_main(void) {
         } else if (mp == MENU_MAIN && (btn == BTN_A_SHORT || btn == BTN_A_LONG)) {
             display_menu_select();
             if (display_get_menu() == MENU_RECONFIG) {
-                ESP_LOGI(TAG, "Reconfig triggered from menu");
-                wifi.StopStation();
-                vTaskDelay(pdMS_TO_TICKS(500));
-                wifi.StartConfigAp();
-                display_show_wifi_config(wifi.GetApSsid().c_str());
+                ESP_LOGI(TAG, "Factory reset triggered from menu");
+                nvs_flash_erase();
+                esp_restart();
             }
         } else if (mp == MENU_USAGE) {
             if (btn == BTN_A_SHORT) display_usage_scroll_down();
