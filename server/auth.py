@@ -218,6 +218,12 @@ class DeviceStore:
         mac = mac.upper()
         return mac in self._devices and self._devices[mac].get("banned", False)
 
+    def get_name(self, mac: str) -> str:
+        mac = mac.upper()
+        if mac in self._devices:
+            return self._devices[mac].get("name", mac)
+        return mac
+
     def gc(self) -> None:
         now = _now()
         for code in list(self._pending):

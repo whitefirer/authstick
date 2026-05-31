@@ -67,6 +67,7 @@ static DevState g_state = S_BOOTING;
 static int64_t g_state_deadline;   // when to advance (timeout/retry)
 static int64_t g_next_poll;        // next poll time (approval or auth codes)
 static int64_t g_code_expires_at;  // auth code expiry timestamp
+static bool g_banned = false;
 static char g_reg_code[8];         // current registration code
 static EspNetwork g_network;
 static char g_server_url[128];
@@ -192,8 +193,13 @@ static void sm_tick(void) {
         http->Close();
         vTaskDelay(pdMS_TO_TICKS(100));
         if (banned) {
-            display_show_banned(g_mac, g_mac);
-            while (1) vTaskDelay(pdMS_TO_TICKS(10000));
+            char devname[64]; devname[0] = 0;
+            cJSON *nm = cJSON_GetObjectItem(r, "name");
+            if (nm && cJSON_IsString(nm)) strncpy(devname, nm->valuestring, sizeof(devname)-1);
+            display_show_banned(g_mac, devname[0] ? devname : g_mac);
+            g_banned = true;
+            vTaskDelay(pdMS_TO_TICKS(3000));
+            break;
         }
         if (already) { set_state(S_READY, CODE_TTL_US); display_show_idle(); }
         else set_state(S_REGISTERING, 0);
@@ -397,7 +403,7 @@ extern "C" void app_main(void) {
 
     while (1) {
         // Run state machine (one step, non-blocking)
-        sm_tick();
+        if (!g_banned) sm_tick();
 
         // Show idle once registered
         if (g_state == S_READY && !idle_shown) {
