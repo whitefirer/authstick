@@ -385,9 +385,10 @@ extern "C" void app_main(void) {
         button_event_t btn = button_poll();
         bool menu_active = display_is_menu_active();
 
-        if (menu_active && btn == BTN_A_SHORT) {
+        menu_page_t mp = display_get_menu();
+        if (mp == MENU_MAIN && btn == BTN_A_SHORT) {
             display_menu_next();
-        } else if (menu_active && (btn == BTN_B_SHORT || btn == BTN_B_LONG)) {
+        } else if (mp == MENU_MAIN && (btn == BTN_B_SHORT || btn == BTN_B_LONG)) {
             display_menu_select();
             if (display_get_menu() == MENU_RECONFIG) {
                 ESP_LOGI(TAG, "Reconfig triggered from menu");
@@ -396,6 +397,9 @@ extern "C" void app_main(void) {
                 wifi.StartConfigAp();
                 display_show_wifi_config(wifi.GetApSsid().c_str());
             }
+        } else if (mp == MENU_USAGE || mp == MENU_ABOUT) {
+            if (btn == BTN_A_SHORT || btn == BTN_B_SHORT || btn == BTN_B_LONG)
+                display_menu_back();
         } else if (!menu_active && btn == BTN_A_SHORT) {
             static bool screen_off = false;
             screen_off = !screen_off;

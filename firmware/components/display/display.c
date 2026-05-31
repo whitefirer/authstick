@@ -29,7 +29,7 @@ static const char *TAG = "display";
 #define LCD_Y_GAP 40
 #define PIXEL_CLOCK_HZ (20 * 1000 * 1000)
 #define BAR_H 20
-#define CODE_SCALE 320  // 1.25x scale for code digits
+#define CODE_SCALE 512  // 2x scale for code digits
 
 static lv_display_t *g_display = NULL;
 static lv_obj_t *g_screen = NULL;
@@ -116,6 +116,9 @@ void display_show_menu(void) {
     if (!g_initialized) return;
     take_lock();
     menu_clear();
+    set_hidden(g_code_label, true);
+    set_hidden(g_countdown_label, true);
+    set_hidden(g_hint_label, true);
     g_menu_page = MENU_MAIN;
     g_menu_idx = 0;
 
@@ -226,19 +229,19 @@ void display_show_usage(void) {
 
     // Body text
     const char *usage_zh =
-        "AuthStick 是一款硬件认证终端。\n\n"
+        "AuthStick \xe6\x98\xaf\xe4\xb8\x80\xe6\xac\xbe\xe7\xa1\xac\xe4\xbb\xb6\xe8\xae\xa4\xe8\xaf\x81\xe7\xbb\x88\xe7\xab\xaf\xe3\x80\x82\n\n"
         "1. \xe9\x85\x8d\xe7\xbd\xaeWiFi\xe5\x92\x8c\xe8\xae\xa4\xe8\xaf\x81\xe6\x9c\x8d\xe5\x8a\xa1\xe5\x9c\xb0\xe5\x9d\x80\n"
-        "2. \xe6\x94\xb6\xe5\x88\xb0\xe9\xaa\x8c\xe8\xaf\x81\xe7\xa0\x81\xe5\x90\x8e\xef\xbc\x8c\xe6\x8c\x89A\xe9\x94\xae\xe6\x89\xb9\xe5\x87\x86\n"
-        "3. \xe6\x8c\x89B\xe9\x94\xae\xe6\x8b\x92\xe7\xbb\x9d\n"
-        "4. \xe9\x95\xbf\xe6\x8c\x89A\xe9\x94\xae\xe5\xbc\x80\xe5\x85\xb3\xe8\x9e\xa2\xe5\xb9\x95\n"
-        "5. \xe9\x95\xbf\xe6\x8c\x89B\xe9\x94\xae\xe8\xbf\x9b\xe5\x85\xa5\xe8\x8f\x9c\xe5\x8d\x95";
+        "2. \xe8\xae\xbe\xe5\xa4\x87\xe6\x94\xb6\xe5\x88\xb0\xe9\xaa\x8c\xe8\xaf\x81\xe7\xa0\x81\xe5\x90\x8e\xe6\x98\xbe\xe7\xa4\xba\xe5\x9c\xa8\xe5\xb1\x8f\xe5\xb9\x95\xe4\xb8\x8a\n"
+        "3. \xe5\x9c\xa8\xe7\x99\xbb\xe5\xbd\x95\xe9\xa1\xb5\xe8\xbe\x93\xe5\x85\xa5\xe9\xaa\x8c\xe8\xaf\x81\xe7\xa0\x81\xe6\x8f\x90\xe4\xba\xa4\n"
+        "4. A\xe9\x94\xae\xe5\xbc\x80\xe5\x85\xb3\xe8\x9e\xa2\xe5\xb9\x95\n"
+        "5. B\xe9\x94\xae\xe8\xbf\x9b\xe5\x85\xa5\xe8\x8f\x9c\xe5\x8d\x95";
     const char *usage_en =
         "AuthStick is a hardware authentication terminal.\n\n"
         "1. Configure WiFi and auth server address\n"
-        "2. Press A to approve verification codes\n"
-        "3. Press B to deny\n"
-        "4. Long-press A to toggle screen\n"
-        "5. Long-press B to enter menu";
+        "2. Device displays verification code on screen\n"
+        "3. Enter the code on the login page to verify\n"
+        "4. Press A to toggle screen\n"
+        "5. Press B to enter menu";
 
     g_menu_items[0] = lv_label_create(g_menu_panel);
     lv_obj_set_style_text_font(g_menu_items[0], &BUILTIN_TEXT_FONT, 0);
@@ -630,6 +633,8 @@ void display_show_wifi_config(const char *ap_ssid) {
     lv_obj_set_style_bg_color(g_screen, COLOR(0x1a1a2e), 0);
     lv_label_set_text(g_status_label, "AuthStick");
     lv_obj_set_style_text_color(g_status_label, COLOR(0x888899), 0);
+    lv_obj_set_style_transform_scale_x(g_code_label, 256, 0);
+    lv_obj_set_style_transform_scale_y(g_code_label, 256, 0);
     char buf[64];
     snprintf(buf, sizeof(buf), "\xe8\xaf\xb7\xe8\xbf\x9e\xe6\x8e\xa5\xe7\x83\xad\xe7\x82\xb9 %s", ap_ssid);
     lv_label_set_text(g_code_label, buf);
@@ -649,6 +654,8 @@ void display_show_code(const char *code, const char *service, int expires_in) {
     g_state = AUTH_STATE_PENDING;
     take_lock();
     lv_obj_set_style_bg_color(g_screen, COLOR(0x1a1a2e), 0);
+    lv_obj_set_style_transform_scale_x(g_code_label, CODE_SCALE, 0);
+    lv_obj_set_style_transform_scale_y(g_code_label, CODE_SCALE, 0);
 
     if (service && service[0]) {
         lv_label_set_text(g_status_label, service);
@@ -662,15 +669,15 @@ void display_show_code(const char *code, const char *service, int expires_in) {
     // Hint: expiry info
     if (g_countdown_label) {
         lv_label_set_text(g_countdown_label, t(
-            "\xe8\xaf\xa5\xe6\xb3\xa8\xe5\x86\x8c\xe7\xa0\x815\xe5\x88\x86\xe9\x92\x9f\xe5\x86\x85\xe6\x9c\x89\xe6\x95\x88\n\xe4\xbb\x85\xe6\xb3\xa8\xe5\x86\x8c\xe8\xae\xbe\xe5\xa4\x87\xe6\x96\xb9\xe8\x83\xbd\xe7\x94\xa8\xe4\xba\x8e\xe9\xaa\x8c\xe8\xaf\x81",
-            "Code valid for 5 minutes\nOnly registered devices can verify"));
+            "\xe6\xb3\xa8\xe5\x86\x8c\xe7\xa0\x81" "5\xe5\x88\x86\xe9\x92\x9f\xe5\x86\x85\xe6\x9c\x89\xe6\x95\x88",
+            "Code valid for 5 minutes"));
         lv_obj_set_style_text_color(g_countdown_label, COLOR(0xe94560), 0);
         set_hidden(g_countdown_label, false);
     }
 
     lv_label_set_text(g_hint_label, t(
-        "A:\xe6\x89\xb9\xe5\x87\x86  B:\xe6\x8b\x92\xe7\xbb\x9d",
-        "A:Approve  B:Deny"));
+        "A:\xe7\x86\x84\xe5\xb1\x8f  B:\xe8\x8f\x9c\xe5\x8d\x95",
+        "A:Screen  B:Menu"));
     set_hidden(g_hint_label, false);
     give_lock();
 }
@@ -680,8 +687,8 @@ void display_update_countdown(int remaining_s) {
     take_lock();
     char buf[48];
     snprintf(buf, sizeof(buf), t(
-        "\xe8\xaf\xa5\xe6\xb3\xa8\xe5\x86\x8c\xe7\xa0\x815\xe5\x88\x86\xe9\x92\x9f\xe5\x86\x85\xe6\x9c\x89\xe6\x95\x88\n\xe4\xbb\x85\xe6\xb3\xa8\xe5\x86\x8c\xe8\xae\xbe\xe5\xa4\x87\xe6\x96\xb9\xe8\x83\xbd\xe7\x94\xa8\xe4\xba\x8e\xe9\xaa\x8c\xe8\xaf\x81",
-        "Code valid for 5 minutes\nOnly registered devices can verify"));
+        "\xe6\xb3\xa8\xe5\x86\x8c\xe7\xa0\x81" "5\xe5\x88\x86\xe9\x92\x9f\xe5\x86\x85\xe6\x9c\x89\xe6\x95\x88",
+        "Code valid for 5 minutes"));
     if (g_countdown_label) lv_label_set_text(g_countdown_label, buf);
     give_lock();
 }

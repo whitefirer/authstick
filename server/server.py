@@ -85,12 +85,13 @@ h1{color:#e94560;margin-bottom:.5rem;font-size:1.5rem}
 .hidden{display:none}
 </style></head><body>
 <div class="panel">
-  <h1>AuthStick 登录</h1>
-  <p class="sub">打开 AuthStick 设备，验证码将自动显示</p>
+  <h1>输入验证码</h1>
+  <p class="sub">查看 AuthStick 设备上显示的验证码，填入下方</p>
   <div id="error" class="error hidden"></div>
-  <div class="code-box" id="code">----</div>
+  <input type="text" id="codeInput" class="code-box" placeholder="输入4位验证码" maxlength="4" autocomplete="off" style="text-align:center">
   <p class="hint">验证码 <span class="countdown" id="countdown">--</span> 秒后过期</p>
-  <p class="status" id="status">等待 Stick 审批...</p>
+  <button id="submitBtn" onclick="submitCode()" style="background:#e94560;color:#fff;border:none;padding:10px 30px;border-radius:6px;font-size:1rem;cursor:pointer;margin-top:1rem">提交验证</button>
+  <p class="status" id="status"></p>
 </div>
 <script>
 let CODE='',POLL_ID=null,EXPIRES=0;
@@ -101,32 +102,30 @@ async function api(method,url,body){
   if(body)opts.body=JSON.stringify(body);
   return (await fetch(url,opts)).json();
 }
-function startTimer(){
-  document.getElementById('countdown').textContent=EXPIRES;
-  let t=setInterval(()=>{
-    EXPIRES--;document.getElementById('countdown').textContent=EXPIRES;
-    if(EXPIRES<=0){clearInterval(t);refresh()}
-  },1000);
-}
 async function refresh(){
   hideError();clearInterval(POLL_ID);
-  let r=await api('POST','/api/code/create',{site_name:document.title||''});
+  let r=await api('POST','/api/code/create',{site_name:document.title||'AuthStick'});
   if(!r.ok){showError(r.error||'创建验证码失败');return}
   CODE=r.code;EXPIRES=r.expires_in;
-  document.getElementById('code').textContent=CODE;
-  document.getElementById('status').textContent='等待 Stick 审批...';
-  startTimer();
-  POLL_ID=setInterval(poll,2000);
+  document.getElementById('countdown').textContent=EXPIRES;
+  POLL_ID=setInterval(()=>{
+    EXPIRES--;document.getElementById('countdown').textContent=EXPIRES;
+    if(EXPIRES<=0){clearInterval(POLL_ID);refresh()}
+  },1000);
 }
-async function poll(){
-  let r=await fetch('/api/code/check?code='+CODE,{credentials:'include'});
-  let d=await r.json();
-  if(d.approved){
-    document.getElementById('status').textContent='已批准！正在跳转...';
+async function submitCode(){
+  let input=document.getElementById('codeInput').value.trim();
+  if(!input){showError('请输入验证码');return}
+  if(input!==CODE){showError('验证码错误，请重新输入');return}
+  let r=await api('POST','/api/code/verify',{code:input});
+  if(r.approved||r.ok){
+    document.getElementById('status').textContent='验证成功！正在跳转...';
     clearInterval(POLL_ID);
     let params=new URLSearchParams(location.search);
     let redir=params.get('redirect_uri')||'/';
     location.href=redir;
+  }else{
+    showError(r.error||'验证失败');
   }
 }
 refresh();
@@ -163,6 +162,22 @@ async def code_check(code: str = Query("")):
         _set_cookie(resp, token)
         return resp
     return {"approved": False}
+
+
+class CodeVerify(BaseModel):
+    code: str
+
+@app.post("/api/code/verify")
+async def code_verify(body: CodeVerify):
+    if not body.code or not body.code.strip():
+        return {"ok": False, "error": "请输入验证码"}
+    token = codes.approve(body.code.strip(), "web")
+    if not token:
+        return {"ok": False, "error": "验证码无效或已过期"}
+    session = sessions.create()
+    resp = JSONResponse({"ok": True})
+    _set_cookie(resp, session)
+    return resp
 
 
 # ── stick API (StickS3 side) ─────────────────────────
