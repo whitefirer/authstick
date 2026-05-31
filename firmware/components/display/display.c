@@ -655,7 +655,7 @@ void display_show_wifi_config(const char *ap_ssid) {
 }
 
 void display_show_code(const char *code, const char *service, int expires_in) {
-    if (!g_initialized) return;
+    if (!g_initialized || g_menu_page != MENU_NONE) return;
     g_state = AUTH_STATE_PENDING;
     take_lock();
     lv_obj_set_style_bg_color(g_screen, COLOR(0x1a1a2e), 0);
