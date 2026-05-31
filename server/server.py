@@ -243,7 +243,10 @@ async def device_register(body: DeviceRegister):
 
 @app.get("/api/device/status")
 async def device_status(mac: str = Query("")):
-    return {"registered": devices.check_registration(mac)}
+    return {
+        "registered": devices.check_registration(mac),
+        "banned": devices.is_banned(mac),
+    }
 
 
 # ── admin ────────────────────────────────────────────

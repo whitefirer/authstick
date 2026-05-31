@@ -34,6 +34,7 @@ void display_show_wifi_config(const char *ap_ssid);
 void display_show_code(const char *code, const char *service, int expires_in);
 void display_show_result(auth_ui_state_t result);
 void display_show_error(const char *msg);
+void display_show_banned(const char *mac, const char *name);
 
 // Overlay pages (stack on top of base)
 void display_show_menu(void);

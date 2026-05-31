@@ -179,15 +179,22 @@ static void sm_tick(void) {
         snprintf(url, sizeof(url), "%s/api/device/status?mac=%s", g_server_url, g_mac);
         auto http = g_network.CreateHttp(0);
         http->SetTimeout(3000);
-        bool already = false;
+        bool already = false, banned = false;
         if (http->Open("GET", url) && http->GetStatusCode() == 200) {
             std::string body = http->ReadAll();
             cJSON *r = cJSON_Parse(body.c_str());
-            if (r && cJSON_IsTrue(cJSON_GetObjectItem(r, "registered"))) already = true;
-            if (r) cJSON_Delete(r);
+            if (r) {
+                if (cJSON_IsTrue(cJSON_GetObjectItem(r, "registered"))) already = true;
+                if (cJSON_IsTrue(cJSON_GetObjectItem(r, "banned"))) banned = true;
+                cJSON_Delete(r);
+            }
         }
         http->Close();
         vTaskDelay(pdMS_TO_TICKS(100));
+        if (banned) {
+            display_show_banned(g_mac, g_mac);
+            while (1) vTaskDelay(pdMS_TO_TICKS(10000));
+        }
         if (already) { set_state(S_READY, CODE_TTL_US); display_show_idle(); }
         else set_state(S_REGISTERING, 0);
         break;
@@ -264,7 +271,7 @@ static void sm_tick(void) {
             g_next_poll = now + POLL_INTERVAL_MS * 1000LL;
             auth_pending_code_t codes[4];
             int n = auth_client_poll(codes, 4);
-            if (n > 0) {
+            if (n > 0 && codes[0].expires_in > 0) {
                 if (display_has_overlay()) {
                     g_code_expires_at = esp_timer_get_time() + codes[0].expires_in * 1000000LL;
                     break;

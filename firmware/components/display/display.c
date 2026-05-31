@@ -161,7 +161,7 @@ void display_show_menu(void) {
     lv_obj_set_style_text_font(g_overlay_items[5], &BUILTIN_TEXT_FONT, 0);
     lv_obj_set_style_text_color(g_overlay_items[5], COLOR(0x666688), 0);
     lv_label_set_text(g_overlay_items[5], t("A:\xe7\xa1\xae\xe8\xae\xa4  B:\xe9\x80\x89\xe6\x8b\xa9", "A:OK  B:Select"));
-    lv_obj_align(g_overlay_items[5], LV_ALIGN_BOTTOM_MID, 0, -4);
+    lv_obj_align(g_overlay_items[5], LV_ALIGN_BOTTOM_MID, 0, -8);
     overlay_highlight();
     give_lock();
 }
@@ -383,6 +383,28 @@ void display_show_result(auth_ui_state_t result) {
     lv_obj_set_style_text_font(g_label_code, &BUILTIN_TEXT_FONT, 0);
     lv_obj_set_style_text_color(g_label_code, COLOR(0xffffff), 0);
     lv_label_set_text(g_label_code, "");
+    lv_obj_center(g_label_code);
+    give_lock();
+}
+
+void display_show_banned(const char *mac, const char *name) {
+    if (!g_initialized) return;
+    take_lock();
+    close_base_page();
+    make_base_page();
+    lv_obj_set_style_bg_color(g_screen, COLOR(0x400000), 0);
+    lv_label_set_text(g_status_label, t("\xe5\xb7\xb2\xe5\xb0\x81\xe7\xa6\x81", "Banned"));
+    lv_obj_set_style_text_color(g_status_label, COLOR(0xe94560), 0);
+    g_label_code = lv_label_create(g_page_base);
+    lv_obj_set_style_text_font(g_label_code, &BUILTIN_TEXT_FONT, 0);
+    lv_obj_set_style_text_color(g_label_code, COLOR(0xeecc88), 0);
+    lv_obj_set_style_text_align(g_label_code, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(g_label_code, W - 32);
+    char buf[128];
+    snprintf(buf, sizeof(buf), t(
+        "\xe4\xbd\xa0\xe5\xb7\xb2\xe8\xa2\xab\xe5\xb0\x81\xe7\xa6\x81\n\xe8\xae\xbe\xe5\xa4\x87: %s\nMAC: %s",
+        "You have been banned\nDevice: %s\nMAC: %s"), name ? name : mac, mac);
+    lv_label_set_text(g_label_code, buf);
     lv_obj_center(g_label_code);
     give_lock();
 }
