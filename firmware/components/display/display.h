@@ -48,7 +48,6 @@ void display_menu_next(void);
 void display_menu_select(void);
 void display_menu_back(void);
 void display_show_usage(void);
-void display_usage_scroll_down(void);
 void display_show_about(void);
 void display_toggle_language(void);
 bool display_is_menu_active(void);

@@ -125,11 +125,11 @@ void display_show_menu(void) {
 
     g_menu_panel = lv_obj_create(g_screen);
     lv_obj_remove_style_all(g_menu_panel);
-    lv_obj_set_size(g_menu_panel, W - 24, H - 36);
+    lv_obj_set_size(g_menu_panel, W - 16, H - 36);
     lv_obj_set_style_bg_color(g_menu_panel, COLOR(0x13131f), 0);
     lv_obj_set_style_radius(g_menu_panel, 8, 0);
     lv_obj_set_style_pad_all(g_menu_panel, 12, 0);
-    lv_obj_align(g_menu_panel, LV_ALIGN_CENTER, -8, 0);
+    lv_obj_align(g_menu_panel, LV_ALIGN_CENTER, -12, 0);
 
     g_menu_title = lv_label_create(g_menu_panel);
     lv_obj_set_style_text_font(g_menu_title, &BUILTIN_TEXT_FONT, 0);
@@ -220,31 +220,27 @@ void display_show_usage(void) {
     menu_clear();
     g_menu_panel = lv_obj_create(g_screen);
     lv_obj_remove_style_all(g_menu_panel);
-    lv_obj_set_size(g_menu_panel, W - 24, H - 36);
+    lv_obj_set_size(g_menu_panel, W - 16, H - 36);
     lv_obj_set_style_bg_color(g_menu_panel, COLOR(0x13131f), 0);
     lv_obj_set_style_radius(g_menu_panel, 8, 0);
     lv_obj_set_style_pad_all(g_menu_panel, 12, 0);
-    lv_obj_set_scrollbar_mode(g_menu_panel, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_scroll_dir(g_menu_panel, LV_DIR_VER);
-    lv_obj_align(g_menu_panel, LV_ALIGN_CENTER, -8, 0);
+    lv_obj_align(g_menu_panel, LV_ALIGN_CENTER, -12, 0);
 
     g_menu_title = lv_label_create(g_menu_panel);
     lv_obj_set_style_text_font(g_menu_title, &BUILTIN_TEXT_FONT, 0);
     lv_obj_set_style_text_color(g_menu_title, COLOR(0xe94560), 0);
     lv_label_set_text(g_menu_title, t("\xe4\xbd\xbf\xe7\x94\xa8\xe8\xaf\xb4\xe6\x98\x8e", "How to Use"));
 
-    // Body text
+    // Body text (short, fits without scrolling)
     const char *usage_zh =
-        "AuthStick \xe7\xa1\xac\xe4\xbb\xb6\xe8\xae\xa4\xe8\xaf\x81\xe7\xbb\x88\xe7\xab\xaf\n\n"
         "1. \xe9\x85\x8dWiFi\xe5\x92\x8c\xe8\xae\xa4\xe8\xaf\x81\xe6\x9c\x8d\xe5\x8a\xa1\xe5\x9c\xb0\xe5\x9d\x80\n"
         "2. \xe8\xae\xbe\xe5\xa4\x87\xe6\x98\xbe\xe7\xa4\xba\xe9\xaa\x8c\xe8\xaf\x81\xe7\xa0\x81\n"
-        "3. \xe7\xbd\x91\xe9\xa1\xb5\xe8\xbe\x93\xe5\x85\xa5\xe9\xaa\x8c\xe8\xaf\x81\xe7\xa0\x81\xe6\x8f\x90\xe4\xba\xa4\n"
-        "4. A\xe9\x94\xae\xe5\xbc\x80\xe5\x85\xb3\xe8\x9e\xa2\xe5\xb9\x95\n"
-        "5. B\xe9\x94\xae\xe8\xbf\x9b\xe5\x85\xa5\xe8\x8f\x9c\xe5\x8d\x95";
+        "3. \xe7\xbd\x91\xe9\xa1\xb5\xe8\xbe\x93\xe5\x85\xa5\xe6\x8f\x90\xe4\xba\xa4\n"
+        "4. A\xe9\x94\xae\xe7\x86\x84\xe5\xb1\x8f\n"
+        "5. B\xe9\x94\xae\xe8\x8f\x9c\xe5\x8d\x95";
     const char *usage_en =
-        "AuthStick hardware auth terminal\n\n"
-        "1. Configure WiFi & auth server\n"
-        "2. Device displays the code\n"
+        "1. Configure WiFi & server\n"
+        "2. Device shows the code\n"
         "3. Enter code on login page\n"
         "4. A toggles screen\n"
         "5. B enters menu";
@@ -252,8 +248,7 @@ void display_show_usage(void) {
     g_menu_items[0] = lv_label_create(g_menu_panel);
     lv_obj_set_style_text_font(g_menu_items[0], &BUILTIN_TEXT_FONT, 0);
     lv_obj_set_style_text_color(g_menu_items[0], COLOR(0xccccdd), 0);
-    lv_label_set_long_mode(g_menu_items[0], LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(g_menu_items[0], W - 36);
+    lv_obj_set_width(g_menu_items[0], W - 40);
     lv_label_set_text(g_menu_items[0], g_lang_en ? usage_en : usage_zh);
     lv_obj_align_to(g_menu_items[0], g_menu_title, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
 
@@ -261,17 +256,10 @@ void display_show_usage(void) {
     g_menu_items[1] = lv_label_create(g_menu_panel);
     lv_obj_set_style_text_font(g_menu_items[1], &BUILTIN_TEXT_FONT, 0);
     lv_obj_set_style_text_color(g_menu_items[1], COLOR(0x666688), 0);
-    lv_label_set_text(g_menu_items[1], t("A:\xe4\xb8\x8b\xe7\xbf\xbb  B:\xe8\xbf\x94\xe5\x9b\x9e", "A:Scroll  B:Back"));
+    lv_label_set_text(g_menu_items[1], t("\xe4\xbb\xbb\xe6\x84\x8f\xe9\x94\xae\xe8\xbf\x94\xe5\x9b\x9e", "Any key to return"));
     lv_obj_align(g_menu_items[1], LV_ALIGN_BOTTOM_MID, 0, -4);
 
     g_menu_page = MENU_USAGE;
-    give_lock();
-}
-
-void display_usage_scroll_down(void) {
-    if (!g_menu_panel) return;
-    take_lock();
-    lv_obj_scroll_by(g_menu_panel, 0, -80, LV_ANIM_ON);
     give_lock();
 }
 
@@ -285,11 +273,11 @@ void display_show_about(void) {
     menu_clear();
     g_menu_panel = lv_obj_create(g_screen);
     lv_obj_remove_style_all(g_menu_panel);
-    lv_obj_set_size(g_menu_panel, W - 24, H - 36);
+    lv_obj_set_size(g_menu_panel, W - 16, H - 36);
     lv_obj_set_style_bg_color(g_menu_panel, COLOR(0x13131f), 0);
     lv_obj_set_style_radius(g_menu_panel, 8, 0);
     lv_obj_set_style_pad_all(g_menu_panel, 12, 0);
-    lv_obj_align(g_menu_panel, LV_ALIGN_CENTER, -8, 0);
+    lv_obj_align(g_menu_panel, LV_ALIGN_CENTER, -12, 0);
 
     g_menu_title = lv_label_create(g_menu_panel);
     lv_obj_set_style_text_font(g_menu_title, &BUILTIN_TEXT_FONT, 0);

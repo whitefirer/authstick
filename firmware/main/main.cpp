@@ -411,10 +411,7 @@ extern "C" void app_main(void) {
                 nvs_flash_erase();
                 esp_restart();
             }
-        } else if (mp == MENU_USAGE) {
-            if (btn == BTN_A_SHORT) display_usage_scroll_down();
-            else if (btn == BTN_B_SHORT || btn == BTN_B_LONG) display_menu_back();
-        } else if (mp == MENU_ABOUT) {
+        } else if (mp == MENU_USAGE || mp == MENU_ABOUT) {
             if (btn == BTN_A_SHORT || btn == BTN_B_SHORT || btn == BTN_B_LONG)
                 display_menu_back();
         } else if (!menu_active && btn == BTN_A_SHORT) {
