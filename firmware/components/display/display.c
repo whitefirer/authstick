@@ -131,6 +131,7 @@ void display_show_menu(void) {
     if (!g_initialized) return;
     take_lock();
     close_overlay();
+    set_hidden(g_page_base, true);
     make_overlay_panel();
     g_overlay_page = OVERLAY_MENU;
     g_menu_idx = 0;
@@ -176,7 +177,7 @@ void display_menu_select(void) {
     int idx = g_menu_idx;
     switch (idx) {
     case 0: // Usage
-        take_lock(); close_overlay(); make_overlay_panel(); g_overlay_page = OVERLAY_USAGE;
+        take_lock(); close_overlay(); set_hidden(g_page_base, true); make_overlay_panel(); g_overlay_page = OVERLAY_USAGE;
         g_overlay_title = lv_label_create(g_overlay);
         lv_obj_set_style_text_font(g_overlay_title, &BUILTIN_TEXT_FONT, 0);
         lv_obj_set_style_text_color(g_overlay_title, COLOR(0xe94560), 0);
@@ -201,7 +202,7 @@ void display_menu_select(void) {
         display_show_menu();
         break;
     case 2: // Factory reset confirm
-        take_lock(); close_overlay(); make_overlay_panel(); g_overlay_page = OVERLAY_RESET_CONFIRM;
+        take_lock(); close_overlay(); set_hidden(g_page_base, true); make_overlay_panel(); g_overlay_page = OVERLAY_RESET_CONFIRM;
         g_overlay_title = lv_label_create(g_overlay);
         lv_obj_set_style_text_font(g_overlay_title, &BUILTIN_TEXT_FONT, 0);
         lv_obj_set_style_text_color(g_overlay_title, COLOR(0xe94560), 0);
@@ -218,7 +219,7 @@ void display_menu_select(void) {
         lv_obj_align(g_overlay_items[1], LV_ALIGN_BOTTOM_MID, 0, -4);
         give_lock(); break;
     case 3: // About
-        take_lock(); close_overlay(); make_overlay_panel(); g_overlay_page = OVERLAY_ABOUT;
+        take_lock(); close_overlay(); set_hidden(g_page_base, true); make_overlay_panel(); g_overlay_page = OVERLAY_ABOUT;
         g_overlay_title = lv_label_create(g_overlay);
         lv_obj_set_style_text_font(g_overlay_title, &BUILTIN_TEXT_FONT, 0);
         lv_obj_set_style_text_color(g_overlay_title, COLOR(0xe94560), 0);
@@ -236,7 +237,7 @@ void display_menu_select(void) {
         lv_obj_align(g_overlay_items[1], LV_ALIGN_BOTTOM_MID, 0, -4);
         give_lock(); break;
     case 4: // Back
-        take_lock(); close_overlay(); give_lock(); break;
+        take_lock(); close_overlay(); set_hidden(g_page_base, false); give_lock(); break;
     }
 }
 
