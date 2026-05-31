@@ -623,8 +623,7 @@ void display_draw_status_bar(void) {
 void display_show_idle(void) {
     if (!g_initialized) return;
     g_state = AUTH_STATE_IDLE;
-    menu_clear();
-    g_menu_page = MENU_NONE;
+    if (g_menu_page != MENU_NONE) { menu_clear(); g_menu_page = MENU_NONE; }
     take_lock();
     lv_obj_set_style_bg_color(g_screen, COLOR(0x1a1a2e), 0);
     lv_label_set_text(g_status_label, "AuthStick");
