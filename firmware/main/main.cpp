@@ -21,7 +21,7 @@
 
 static const char *TAG = "main";
 
-#define POLL_INTERVAL_MS    3000
+#define POLL_INTERVAL_MS    30000   // 30s between auth code polls
 #define RESULT_SHOW_MS      2000
 #define CODE_TTL_US         300000000LL  // 5 min
 #define POLL_APPROVAL_US    5000000LL    // 5s between approval checks
@@ -67,11 +67,20 @@ static DevState g_state = S_BOOTING;
 static int64_t g_state_deadline;   // when to advance (timeout/retry)
 static int64_t g_next_poll;        // next poll time (approval or auth codes)
 static int64_t g_code_expires_at;  // auth code expiry timestamp
+static int64_t g_token_rotate_at; // next token rotation time
+static bool g_code_pending;       // new code to display after HTTP done
+static char g_pending_code[8];
+static char g_pending_name[32];
+static int g_pending_expires;
 static bool g_banned = false;
+static bool g_pending_banned;      // banned detected by poll task
+static bool g_pending_token_err;   // token invalid, need re-register
 static char g_reg_code[8];         // current registration code
 static EspNetwork g_network;
 static char g_server_url[128];
 static char g_mac[18];
+static char g_devname[64];
+static char g_device_token[64];
 
 static void set_state(DevState s, int64_t deadline_us) {
     g_state = s;
@@ -162,6 +171,98 @@ static void get_server_url(char *buf, size_t buflen) {
 
 // ── State machine step (called once per main loop iteration) ──
 
+// ── Background poll task ─────────────────────────────────
+// Runs HTTP polling in separate task to avoid lock contention with LVGL main task
+
+static void bg_poll_task(void *arg) {
+    ESP_LOGI(TAG, "Poll task started");
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    while (1) {
+        if (g_banned || g_state != S_READY || g_code_pending) {
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            continue;
+        }
+        if (!g_device_token[0]) {
+            ESP_LOGW(TAG, "No device token — re-register required");
+            vTaskDelay(pdMS_TO_TICKS(30000));
+            continue;
+        }
+        if (g_code_expires_at > 0 && esp_timer_get_time() < g_code_expires_at) {
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            continue;
+        }
+
+        // Rotate token every 24 hours
+        if (esp_timer_get_time() > g_token_rotate_at) {
+            char rt_url[256]; char rt_body[128];
+            snprintf(rt_url, sizeof(rt_url), "%s/api/stick/rotate-token", g_server_url);
+            snprintf(rt_body, sizeof(rt_body), "{\"token\":\"%s\",\"mac\":\"%s\"}", g_device_token, g_mac);
+            auto rt = g_network.CreateHttp(0);
+            rt->SetTimeout(3000);
+            rt->SetHeader("Content-Type", "application/json");
+            rt->SetContent(std::move(std::string(rt_body)));
+            if (rt->Open("POST", rt_url) && rt->GetStatusCode() == 200) {
+                std::string resp = rt->ReadAll();
+                cJSON *r = cJSON_Parse(resp.c_str());
+                if (r) {
+                    cJSON *jt = cJSON_GetObjectItem(r, "device_token");
+                    if (jt && jt->valuestring && jt->valuestring[0]) {
+                        strncpy(g_device_token, jt->valuestring, sizeof(g_device_token)-1);
+                        nvs_handle_t nvs; nvs_open("wifi", NVS_READWRITE, &nvs);
+                        nvs_set_str(nvs, "dev_token", g_device_token);
+                        g_token_rotate_at = esp_timer_get_time() + 86400000000LL;
+                        nvs_set_u64(nvs, "token_rot", (uint64_t)g_token_rotate_at);
+                        nvs_commit(nvs); nvs_close(nvs);
+                        ESP_LOGI(TAG, "Token rotated");
+                    }
+                    cJSON_Delete(r);
+                }
+            }
+            rt->Close();
+            g_token_rotate_at = esp_timer_get_time() + 86400000000LL;  // 24h
+        }
+
+        char url[256];
+        snprintf(url, sizeof(url), "%s/api/stick/generate", g_server_url);
+        char body[128];
+        snprintf(body, sizeof(body), "{\"token\":\"%s\",\"mac\":\"%s\"}", g_device_token, g_mac);
+        auto http = g_network.CreateHttp(0);
+        http->SetTimeout(3000);
+        http->SetHeader("Content-Type", "application/json");
+        http->SetContent(std::move(std::string(body)));
+        if (http->Open("POST", url) && http->GetStatusCode() == 200) {
+            std::string resp = http->ReadAll();
+            cJSON *r = cJSON_Parse(resp.c_str());
+            if (r) {
+                if (cJSON_IsTrue(cJSON_GetObjectItem(r, "banned"))) {
+                    cJSON *dn = cJSON_GetObjectItem(r, "device_name");
+                    if (dn && cJSON_IsString(dn)) strncpy(g_devname, dn->valuestring, sizeof(g_devname)-1);
+                    g_pending_banned = true;
+                } else {
+                    cJSON *dn = cJSON_GetObjectItem(r, "device_name");
+                    if (dn && cJSON_IsString(dn)) strncpy(g_devname, dn->valuestring, sizeof(g_devname)-1);
+                    cJSON *jc = cJSON_GetObjectItem(r, "code");
+                    cJSON *je = cJSON_GetObjectItem(r, "expires_in");
+                    if (jc && jc->valuestring && je && je->valueint > 0) {
+                        strncpy(g_pending_code, jc->valuestring, sizeof(g_pending_code)-1);
+                        g_pending_expires = je->valueint;
+                        strncpy(g_pending_name, g_devname[0] ? g_devname : "AuthStick", sizeof(g_pending_name)-1);
+                        g_code_pending = true;
+                        ESP_LOGI(TAG, "Auth code: %s", jc->valuestring);
+                    }
+                }
+                cJSON_Delete(r);
+            }
+        } else {
+            int st = http->GetStatusCode();
+            ESP_LOGW(TAG, "Poll failed, status=%d, token=%s", st, g_device_token);
+            if (st == 403) g_pending_token_err = true;
+        }
+        http->Close();
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
+
 static void sm_tick(void) {
     int64_t now = esp_timer_get_time();
 
@@ -187,16 +288,15 @@ static void sm_tick(void) {
             if (r) {
                 if (cJSON_IsTrue(cJSON_GetObjectItem(r, "registered"))) already = true;
                 if (cJSON_IsTrue(cJSON_GetObjectItem(r, "banned"))) banned = true;
+                cJSON *nm = cJSON_GetObjectItem(r, "name");
+                if (nm && cJSON_IsString(nm)) strncpy(g_devname, nm->valuestring, sizeof(g_devname)-1);
                 cJSON_Delete(r);
             }
         }
         http->Close();
         vTaskDelay(pdMS_TO_TICKS(100));
         if (banned) {
-            char devname[64]; devname[0] = 0;
-            cJSON *nm = cJSON_GetObjectItem(r, "name");
-            if (nm && cJSON_IsString(nm)) strncpy(devname, nm->valuestring, sizeof(devname)-1);
-            display_show_banned(g_mac, devname[0] ? devname : g_mac);
+            display_show_banned(g_mac, g_devname[0] ? g_devname : g_mac);
             g_banned = true;
             vTaskDelay(pdMS_TO_TICKS(3000));
             break;
@@ -232,6 +332,23 @@ static void sm_tick(void) {
         vTaskDelay(pdMS_TO_TICKS(100));
         if (got_code) {
             display_show_code(g_reg_code, "RegCode", 300);
+            // Bind device token to registration code
+            if (g_device_token[0]) {
+                char bd_url[256];
+                snprintf(bd_url, sizeof(bd_url), "%s/api/device/bind-token", g_server_url);
+                auto bd = g_network.CreateHttp(0);
+                bd->SetTimeout(3000);
+                bd->SetHeader("Content-Type", "application/json");
+                char bd_body[320];
+                snprintf(bd_body, sizeof(bd_body), "{\"mac\":\"%s\",\"code\":\"%s\",\"device_token\":\"%s\"}", g_mac, g_reg_code, g_device_token);
+                bd->SetContent(std::move(std::string(bd_body)));
+                if (bd->Open("POST", bd_url) && bd->GetStatusCode() == 200) {
+                    ESP_LOGI(TAG, "Token bound to registration");
+                } else {
+                    ESP_LOGW(TAG, "Bind-token failed, status=%d", bd->GetStatusCode());
+                }
+                bd->Close();
+            }
             set_state(S_WAIT_APPROVAL, CODE_TTL_US);
             g_next_poll = now + POLL_APPROVAL_US;
             ESP_LOGI(TAG, "Reg code: %s", g_reg_code);
@@ -272,21 +389,7 @@ static void sm_tick(void) {
         break;
 
     case S_READY:
-        // Poll for auth codes every POLL_INTERVAL_MS
-        if (now >= g_next_poll) {
-            g_next_poll = now + POLL_INTERVAL_MS * 1000LL;
-            auth_pending_code_t codes[4];
-            int n = auth_client_poll(codes, 4);
-            if (n > 0 && codes[0].expires_in > 0) {
-                if (display_has_overlay()) {
-                    g_code_expires_at = esp_timer_get_time() + codes[0].expires_in * 1000000LL;
-                    break;
-                }
-                display_show_code(codes[0].code, codes[0].service_name, codes[0].expires_in);
-                g_code_expires_at = esp_timer_get_time() + codes[0].expires_in * 1000000LL;
-                ESP_LOGI(TAG, "Auth code: %s", codes[0].code);
-            }
-        }
+        // Polling handled by background task — nothing to do here
         break;
 
     case S_ERROR:
@@ -311,10 +414,10 @@ static void battery_timer_cb(void*) {
 extern "C" void app_main(void) {
     ESP_LOGI(TAG, "=== AuthStick booting ===");
     pmic_init();
+    nvs_flash_init();
     display_init();
     display_show_connecting();
-
-    nvs_flash_init();
+    button_init();
     esp_netif_init();
     esp_event_loop_create_default();
 
@@ -360,21 +463,42 @@ extern "C" void app_main(void) {
         }
     });
 
-    // ── Connect ─────────────────────────────────────────
+    // ── Connect (with button handling during wait) ─────
+    auto handle_buttons = []() {
+        button_event_t btn = button_poll();
+        bool has_ov = display_has_overlay();
+        overlay_page_t ov = display_get_overlay();
+        if (ov == OVERLAY_MENU && btn == BTN_B_SHORT) display_menu_next();
+        else if (ov == OVERLAY_MENU && (btn == BTN_A_SHORT || btn == BTN_A_LONG)) display_menu_select();
+        else if (ov == OVERLAY_RESET_CONFIRM) {
+            if (btn == BTN_A_SHORT || btn == BTN_A_LONG) { nvs_flash_erase(); esp_restart(); }
+            else if (btn == BTN_B_SHORT || btn == BTN_B_LONG) display_show_menu();
+        } else if (ov == OVERLAY_USAGE || ov == OVERLAY_ABOUT) {
+            if (btn == BTN_A_SHORT || btn == BTN_B_SHORT || btn == BTN_B_LONG) display_show_menu();
+        } else if (!has_ov && btn == BTN_A_SHORT) {
+            static bool scr = false; scr = !scr; display_set_backlight(!scr);
+        } else if (!has_ov && (btn == BTN_B_SHORT || btn == BTN_B_LONG)) display_show_menu();
+    };
+
     auto& ssid_mgr = SsidManager::GetInstance();
     if (ssid_mgr.GetSsidList().empty()) {
         vTaskDelay(pdMS_TO_TICKS(1500));
         wifi.StartConfigAp();
     } else {
         wifi.StartStation();
-        EventBits_t bits = xEventGroupWaitBits(wifi_evt, BIT0, pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
+        for (int i = 0; i < 60 && !wifi.IsConnected(); i++) {
+            EventBits_t bits = xEventGroupWaitBits(wifi_evt, BIT0, pdFALSE, pdFALSE, pdMS_TO_TICKS(500));
+            handle_buttons();
+        }
         if (!wifi.IsConnected()) wifi.StartConfigAp();
     }
     while (!wifi.IsConnected()) {
         if (need_station) { need_station = false; wifi.StartStation(); }
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(100));
+        handle_buttons();
     }
     ESP_LOGI(TAG, "WiFi connected!");
+    if (!display_has_overlay()) display_show_connecting();
 
     // Sync time via SNTP
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
@@ -389,10 +513,31 @@ extern "C" void app_main(void) {
 
     // ── Init ────────────────────────────────────────────
     get_server_url(g_server_url, sizeof(g_server_url));
+    // Load or generate device token
+    g_device_token[0] = 0;
+    nvs_handle_t nvs;
+    if (nvs_open("wifi", NVS_READWRITE, &nvs) == ESP_OK) {
+        size_t len = sizeof(g_device_token);
+        if (nvs_get_str(nvs, "dev_token", g_device_token, &len) != ESP_OK || !g_device_token[0]) {
+            // Generate random token on first boot
+            uint32_t r[4];
+            for (int i = 0; i < 4; i++) r[i] = esp_random();
+            snprintf(g_device_token, sizeof(g_device_token), "%08lx%08lx%08lx%08lx", (unsigned long)r[0], (unsigned long)r[1], (unsigned long)r[2], (unsigned long)r[3]);
+            nvs_set_str(nvs, "dev_token", g_device_token);
+            nvs_commit(nvs);
+            ESP_LOGI(TAG, "Device token generated");
+        }
+        // Load last token rotation time
+        uint64_t rot = 0;
+        if (nvs_get_u64(nvs, "token_rot", &rot) == ESP_OK) g_token_rotate_at = (int64_t)rot;
+        nvs_close(nvs);
+    }
+    if (!g_token_rotate_at) g_token_rotate_at = esp_timer_get_time() + 86400000000LL;
     auth_client_init(g_server_url);
     auth_client_get_mac(g_mac);
     display_set_mac(g_mac);
-    button_init();
+    g_devname[0] = 0;
+    xTaskCreatePinnedToCore(bg_poll_task, "bg_poll", 8192, NULL, 5, NULL, 0);
     vTaskPrioritySet(nullptr, 10);
 
     // Enter registration flow
@@ -409,6 +554,27 @@ extern "C" void app_main(void) {
         if (g_state == S_READY && !idle_shown) {
             idle_shown = true;
             display_show_idle();
+        }
+
+        // Handle banned detected by background poll task
+        if (g_pending_banned && !display_has_overlay()) {
+            g_pending_banned = false;
+            g_banned = true;
+            display_show_banned(g_mac, g_devname[0] ? g_devname : g_mac);
+        }
+
+        // Handle token error — skip if overlay active
+        if (g_pending_token_err && !display_has_overlay()) {
+            g_pending_token_err = false;
+            display_show_token_error();
+            g_banned = false;
+        }
+
+        // Show pending auth code — skip if overlay active
+        if (g_code_pending && !display_has_overlay()) {
+            g_code_pending = false;
+            g_code_expires_at = esp_timer_get_time() + g_pending_expires * 1000000LL;
+            display_show_code(g_pending_code, g_pending_name, g_pending_expires);
         }
 
         // ── Button handling ──────────────────────────────
@@ -439,10 +605,22 @@ extern "C" void app_main(void) {
             display_show_menu();
         }
 
-        // Code expiry — skip if overlay active
+        // Code expiry — clear timer, poll task will refresh
         if (g_code_expires_at > 0 && esp_timer_get_time() > g_code_expires_at) {
             g_code_expires_at = 0;
-            if (!display_has_overlay()) display_show_idle();
+        }
+
+        // ── Auto sleep / wake ──────────────────────────
+        static bool asleep = false;
+        static int64_t last_act = 0;
+        if (btn != BTN_NONE) last_act = esp_timer_get_time();
+        if (asleep && btn != BTN_NONE) {
+            asleep = false; display_set_backlight(true);
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;  // skip action on wake-up press
+        }
+        if (!asleep && esp_timer_get_time() - last_act > 30000000LL) {
+            if (btn == BTN_NONE) { asleep = true; display_set_backlight(false); }
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));

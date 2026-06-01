@@ -21,6 +21,14 @@ typedef enum {
     OVERLAY_RESET_CONFIRM,
 } overlay_page_t;
 
+typedef enum {
+    MENU_USAGE = 0,
+    MENU_LANGUAGE,
+    MENU_FACTORY_RESET,
+    MENU_ABOUT,
+    MENU_BACK,
+} menu_item_t;
+
 void display_init(void);
 void display_set_brightness(uint8_t b);
 void display_set_backlight(bool on);
@@ -34,6 +42,7 @@ void display_show_wifi_config(const char *ap_ssid);
 void display_show_code(const char *code, const char *service, int expires_in);
 void display_show_result(auth_ui_state_t result);
 void display_show_error(const char *msg);
+void display_show_token_error(void);
 void display_show_banned(const char *mac, const char *name);
 
 // Overlay pages (stack on top of base)

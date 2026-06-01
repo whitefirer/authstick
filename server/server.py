@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from auth import CodeStore, DeviceStore, SessionStore
+from auth import CodeStore, DeviceStore, SessionStore, DISPLAY_CODE_TTL
 
 COOKIE_NAME = "stick_sess"
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web")
@@ -74,8 +74,8 @@ body{font-family:system-ui,sans-serif;background:#1a1a2e;color:#e0e0e0;
 h1{color:#e94560;margin-bottom:.5rem;font-size:1.5rem}
 .sub{color:#889;font-size:.85rem;margin-bottom:1.5rem}
 .code-box{background:#0f3460;border:2px dashed #333;border-radius:8px;
-  font-size:3rem;letter-spacing:1rem;font-family:monospace;padding:1rem;
-  margin:1rem 0;color:#e94560;user-select:all}
+  font-size:2rem;letter-spacing:.6rem;font-family:monospace;padding:.8rem .4rem;
+  margin:1rem 0;color:#e94560;user-select:all;width:100%}
 .hint{color:#889;font-size:.8rem;margin:.5rem 0}
 .status{color:#e94560;font-size:.85rem;margin-top:1rem;min-height:1.5em}
 .badge{display:inline-block;background:#0f3460;border-radius:4px;
@@ -86,49 +86,26 @@ h1{color:#e94560;margin-bottom:.5rem;font-size:1.5rem}
 </style></head><body>
 <div class="panel">
   <h1>输入验证码</h1>
-  <p class="sub">查看 AuthStick 设备上显示的验证码，填入下方</p>
+  <p class="sub">查看 AuthStick 设备上显示的 6 位验证码，填入下方</p>
   <div id="error" class="error hidden"></div>
-  <input type="text" id="codeInput" class="code-box" placeholder="输入4位验证码" maxlength="4" autocomplete="off" style="text-align:center">
-  <p class="hint">验证码 <span class="countdown" id="countdown">--</span> 秒后过期</p>
+  <input type="text" id="codeInput" class="code-box" placeholder="输入6位验证码" maxlength="6" autocomplete="off" style="text-align:center">
   <button id="submitBtn" onclick="submitCode()" style="background:#e94560;color:#fff;border:none;padding:10px 30px;border-radius:6px;font-size:1rem;cursor:pointer;margin-top:1rem">提交验证</button>
   <p class="status" id="status"></p>
 </div>
 <script>
-let CODE='',POLL_ID=null,EXPIRES=0;
 function showError(m){let e=document.getElementById('error');e.textContent=m;e.classList.remove('hidden')}
-function hideError(){document.getElementById('error').classList.add('hidden')}
-async function api(method,url,body){
-  const opts={method,headers:{'Content-Type':'application/json'},credentials:'include'};
-  if(body)opts.body=JSON.stringify(body);
-  return (await fetch(url,opts)).json();
-}
-async function refresh(){
-  hideError();clearInterval(POLL_ID);
-  let r=await api('POST','/api/code/create',{site_name:document.title||'AuthStick'});
-  if(!r.ok){showError(r.error||'创建验证码失败');return}
-  CODE=r.code;EXPIRES=r.expires_in;
-  document.getElementById('countdown').textContent=EXPIRES;
-  POLL_ID=setInterval(()=>{
-    EXPIRES--;document.getElementById('countdown').textContent=EXPIRES;
-    if(EXPIRES<=0){clearInterval(POLL_ID);refresh()}
-  },1000);
-}
 async function submitCode(){
   let input=document.getElementById('codeInput').value.trim();
   if(!input){showError('请输入验证码');return}
-  if(input!==CODE){showError('验证码错误，请重新输入');return}
-  let r=await api('POST','/api/code/verify',{code:input});
-  if(r.approved||r.ok){
+  let r=await fetch('/api/code/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:input}),credentials:'include'}).then(r=>r.json());
+  if(r.ok){
     document.getElementById('status').textContent='验证成功！正在跳转...';
-    clearInterval(POLL_ID);
     let params=new URLSearchParams(location.search);
-    let redir=params.get('redirect_uri')||'/';
-    location.href=redir;
+    location.href=params.get('redirect_uri')||'/';
   }else{
     showError(r.error||'验证失败');
   }
 }
-refresh();
 </script>
 </body></html>"""
 
@@ -184,7 +161,43 @@ async def code_verify(body: CodeVerify):
 
 @app.get("/api/stick/pending")
 async def stick_pending(device: str = Query("")):
-    return {"codes": codes.list_pending()}
+    name = devices.get_name(device) if device else ""
+    banned = devices.is_banned(device) if device else False
+    return {"codes": codes.list_pending(), "device_name": name, "banned": banned}
+
+class GenerateCode(BaseModel):
+    token: str
+    mac: str = ""
+
+class RotateToken(BaseModel):
+    token: str
+    mac: str = ""
+
+@app.post("/api/stick/rotate-token")
+async def stick_rotate_token(body: RotateToken):
+    mac = devices.lookup_by_token(body.token)
+    if not mac:
+        return JSONResponse({"error": "invalid token"}, status_code=403)
+    if body.mac and body.mac.upper().replace(":", "") != mac.replace(":", ""):
+        return JSONResponse({"error": "token/MAC mismatch"}, status_code=403)
+    new_token = devices.rotate_token(mac)
+    if not new_token:
+        return JSONResponse({"error": "rotate failed"}, status_code=500)
+    return {"ok": True, "device_token": new_token}
+
+@app.post("/api/stick/generate")
+async def stick_generate(body: GenerateCode):
+    mac = devices.lookup_by_token(body.token)
+    if not mac:
+        return JSONResponse({"error": "invalid token"}, status_code=403)
+    if body.mac and body.mac.upper().replace(":", "") != mac.replace(":", ""):
+        return JSONResponse({"error": "token/MAC mismatch"}, status_code=403)
+    name = devices.get_name(mac)
+    banned = devices.is_banned(mac)
+    if banned:
+        return {"device_name": name, "banned": True}
+    code = codes.create(site_name="", device=mac)
+    return {"code": code, "expires_in": DISPLAY_CODE_TTL, "device_name": name, "banned": False}
 
 
 def _check_device(device_mac: str) -> bool:
@@ -241,6 +254,18 @@ async def device_register(body: DeviceRegister):
     return {"ok": True, **result}
 
 
+class BindToken(BaseModel):
+    mac: str
+    code: str
+    device_token: str
+
+@app.post("/api/device/bind-token")
+async def device_bind_token(body: BindToken):
+    if devices.bind_token(body.mac, body.code, body.device_token):
+        return {"ok": True}
+    raise HTTPException(400, detail="invalid code or MAC mismatch")
+
+
 @app.get("/api/device/status")
 async def device_status(mac: str = Query("")):
     name = devices.get_name(mac) if devices.is_registered(mac) else ""
@@ -270,7 +295,7 @@ input{background:#0f3460;border:1px solid #333;color:#e0e0e0;padding:8px;margin:
 <h2>验证新设备</h2>
 <p>在设备屏幕上查看6位验证码，输入下方：</p>
 <form onsubmit="verifyDevice(event)">
-<input name="code" placeholder="6位数字验证码" maxlength="6" required>
+<input name="code" placeholder="6位数字注册码" maxlength="6" required>
 <input name="devname" placeholder="设备名称（选填）">
 <button class="btn">验证设备</button>
 </form>
@@ -289,14 +314,18 @@ async function verifyDevice(e){e.preventDefault();
   const code=e.target.code.value.trim();
   const name=e.target.devname.value.trim();
   let r=await api('/api/admin/verify-device',{code,name});
-  document.getElementById('verify-msg').textContent=r.ok
-    ?'设备 '+r.mac+' 已注册！':(r.error||'验证失败');
+  let msg=document.getElementById('verify-msg');
+  if(r.ok){msg.style.color='';msg.textContent='设备 '+r.mac+' 已注册！'}
+  else{msg.style.color='#e94560';msg.textContent=r.detail||'注册码无效或已过期';}
   if(r.ok)location.reload();}
 async function renameDev(mac){
   const n=prompt('新名称:',''); if(!n)return;
   await api('/api/admin/rename',{mac,name:n}); location.reload();}
 async function banDev(mac){await api('/api/admin/ban',{mac}); location.reload();}
 async function unbanDev(mac){await api('/api/admin/unban',{mac}); location.reload();}
+async function resetToken(mac){
+  if(!confirm('重置令牌后设备需重新注册，确认？'))return;
+  await api('/api/admin/reset-token',{mac}); location.reload();}
 async function removeDev(mac){
   if(!confirm('确认移除设备 '+mac+'?'))return;
   await api('/api/admin/remove',{mac}); location.reload();}
@@ -314,7 +343,10 @@ async def admin_page():
     rows = ""
     for d in devs:
         banned = d.get('banned', False)
-        status = '<span class="banned">已封禁</span>' if banned else '<span class="status-ok">正常</span>'
+        has_token = bool(d.get('token', ''))
+        if banned: status = '<span class="banned">已封禁</span>'
+        elif not has_token: status = '<span class="status-pending">待注册</span>'
+        else: status = '<span class="status-ok">正常</span>'
         mac = d['mac']
         name = d.get('name', mac)
         rows += f"<tr><td>{mac}</td><td onclick=\"renameDev('{mac}')\" style=\"cursor:pointer\" title=\"点击改名\">{name}</td>" \
@@ -322,6 +354,7 @@ async def admin_page():
                 f"<td>" \
                 f"<button class=\"btn-sm\" onclick=\"renameDev('{mac}')\">改名</button> " \
                 f"<button class=\"btn-sm\" onclick=\"{'unbanDev' if banned else 'banDev'}('{mac}')\">{'解封' if banned else '封禁'}</button> " \
+                f"<button class=\"btn-sm\" onclick=\"resetToken('{mac}')\">重置令牌</button> " \
                 f"<button class=\"btn-sm\" onclick=\"removeDev('{mac}')\">移除</button>" \
                 f"</td></tr>"
     if not rows:
@@ -342,7 +375,9 @@ async def admin_verify_device(body: VerifyDevice):
         if body.name.strip():
             devices.rename(mac, body.name.strip())
         return {"ok": True, "mac": mac}
-    raise HTTPException(404, detail="验证码错误或已过期")
+    if devices.code_exists(body.code):
+        raise HTTPException(400, detail="设备未完成令牌绑定，请确认固件已更新")
+    raise HTTPException(404, detail="注册码错误或已过期")
 
 
 class AdminMac(BaseModel):
@@ -370,6 +405,12 @@ async def admin_unban(body: AdminMac):
 @app.post("/api/admin/remove")
 async def admin_remove(body: AdminMac):
     if devices.remove(body.mac):
+        return {"ok": True}
+    raise HTTPException(404, detail="设备不存在")
+
+@app.post("/api/admin/reset-token")
+async def admin_reset_token(body: AdminMac):
+    if devices.reset_token(body.mac):
         return {"ok": True}
     raise HTTPException(404, detail="设备不存在")
 

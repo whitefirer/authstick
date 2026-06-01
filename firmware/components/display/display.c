@@ -15,12 +15,14 @@
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "nvs_flash.h"
 #include "esp_timer.h"
 #include "lvgl.h"
 
 LV_FONT_DECLARE(BUILTIN_TEXT_FONT);
 LV_FONT_DECLARE(BUILTIN_ICON_FONT);
 LV_FONT_DECLARE(font_digits_30_4);
+extern const lv_image_dsc_t authstick_icon;
 
 static const char *TAG = "display";
 
@@ -38,6 +40,10 @@ static auth_ui_state_t g_state = AUTH_STATE_IDLE;
 static bool g_lang_en = false;
 static bool g_backlight_on = true;
 static char g_mac[18] = "";
+static char g_ap_ssid[32];
+static char g_last_code[8];
+static char g_last_service[32];
+static int g_last_expires;
 
 // Status bar
 static lv_obj_t *g_top_bar = NULL;
@@ -68,6 +74,13 @@ static void take_lock(void) { lvgl_port_lock(0); }
 static void give_lock(void) { lvgl_port_unlock(); }
 static void set_hidden(lv_obj_t *obj, bool hide) {
     if (obj) { if (hide) lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN); else lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN); }
+}
+
+static lv_obj_t *make_icon(lv_obj_t *parent) {
+    lv_obj_t *icon = lv_image_create(parent);
+    lv_image_set_src(icon, &authstick_icon);
+    lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, 16);
+    return icon;
 }
 
 // ── Base page helpers ─────────────────────────────────
@@ -112,7 +125,18 @@ void display_set_backlight(bool on) {
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
-void display_toggle_language(void) { g_lang_en = !g_lang_en; }
+static bool g_lang_changed = false;
+
+void display_toggle_language(void) {
+    g_lang_en = !g_lang_en;
+    g_lang_changed = true;
+    nvs_handle_t nvs;
+    if (nvs_open("wifi", NVS_READWRITE, &nvs) == ESP_OK) {
+        nvs_set_u8(nvs, "lang_en", g_lang_en ? 1 : 0);
+        nvs_commit(nvs);
+        nvs_close(nvs);
+    }
+}
 void display_set_mac(const char *mac) { if (mac) { strncpy(g_mac, mac, 17); g_mac[17] = 0; } }
 void display_set_brightness(uint8_t b) { if (g_backlight_on) { ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, b); ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0); } }
 bool display_has_overlay(void) { return g_overlay_page != OVERLAY_NONE; }
@@ -176,7 +200,7 @@ void display_menu_select(void) {
     if (g_overlay_page != OVERLAY_MENU) return;
     int idx = g_menu_idx;
     switch (idx) {
-    case 0: // Usage
+    case MENU_USAGE:
         take_lock(); close_overlay(); set_hidden(g_page_base, true); make_overlay_panel(); g_overlay_page = OVERLAY_USAGE;
         g_overlay_title = lv_label_create(g_overlay);
         lv_obj_set_style_text_font(g_overlay_title, &BUILTIN_TEXT_FONT, 0);
@@ -196,12 +220,11 @@ void display_menu_select(void) {
         lv_label_set_text(g_overlay_items[1], t("A/B:\xe8\xbf\x94\xe5\x9b\x9e\xe8\x8f\x9c\xe5\x8d\x95", "A/B:Back to menu"));
         lv_obj_align(g_overlay_items[1], LV_ALIGN_BOTTOM_MID, 0, -4);
         give_lock(); break;
-    case 1: // Language
+    case MENU_LANGUAGE: // Language
         display_toggle_language();
-        take_lock(); close_overlay(); give_lock();
         display_show_menu();
         break;
-    case 2: // Factory reset confirm
+    case MENU_FACTORY_RESET: // Factory reset confirm
         take_lock(); close_overlay(); set_hidden(g_page_base, true); make_overlay_panel(); g_overlay_page = OVERLAY_RESET_CONFIRM;
         g_overlay_title = lv_label_create(g_overlay);
         lv_obj_set_style_text_font(g_overlay_title, &BUILTIN_TEXT_FONT, 0);
@@ -218,7 +241,7 @@ void display_menu_select(void) {
         lv_label_set_text(g_overlay_items[1], t("A:\xe7\xa1\xae\xe8\xae\xa4  B:\xe5\x8f\x96\xe6\xb6\x88", "A:Confirm  B:Cancel"));
         lv_obj_align(g_overlay_items[1], LV_ALIGN_BOTTOM_MID, 0, -4);
         give_lock(); break;
-    case 3: // About
+    case MENU_ABOUT: // About
         take_lock(); close_overlay(); set_hidden(g_page_base, true); make_overlay_panel(); g_overlay_page = OVERLAY_ABOUT;
         g_overlay_title = lv_label_create(g_overlay);
         lv_obj_set_style_text_font(g_overlay_title, &BUILTIN_TEXT_FONT, 0);
@@ -238,8 +261,16 @@ void display_menu_select(void) {
         lv_label_set_text(g_overlay_items[1], t("A/B:\xe8\xbf\x94\xe5\x9b\x9e\xe8\x8f\x9c\xe5\x8d\x95", "A/B:Back to menu"));
         lv_obj_align(g_overlay_items[1], LV_ALIGN_BOTTOM_MID, 0, -4);
         give_lock(); break;
-    case 4: // Back
-        take_lock(); close_overlay(); set_hidden(g_page_base, false); give_lock(); break;
+    case MENU_BACK: // Back
+        take_lock(); close_overlay(); set_hidden(g_page_base, false);
+        if (g_lang_changed) {
+            g_lang_changed = false;
+            give_lock();
+            if (g_last_code[0]) display_show_code(g_last_code, g_last_service, g_last_expires);
+            else if (g_ap_ssid[0]) display_show_wifi_config(g_ap_ssid);
+            break;
+        }
+        give_lock(); break;
     }
 }
 
@@ -254,6 +285,15 @@ void display_show_idle(void) {
     lv_obj_set_style_bg_color(g_screen, COLOR(0x1a1a2e), 0);
     lv_label_set_text(g_status_label, "AuthStick");
     lv_obj_set_style_text_color(g_status_label, COLOR(0x888899), 0);
+    make_icon(g_page_base);
+    g_label_code = lv_label_create(g_page_base);
+    lv_obj_set_style_text_font(g_label_code, &BUILTIN_TEXT_FONT, 0);
+    lv_obj_set_style_text_color(g_label_code, COLOR(0x666688), 0);
+    lv_obj_set_style_text_align(g_label_code, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(g_label_code, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(g_label_code, W - 32);
+    lv_label_set_text(g_label_code, t("\xe8\xaf\xb7\xe7\xa8\x8d\xe5\x80\x99...", "Please wait..."));
+    lv_obj_center(g_label_code);
     g_label_hint = lv_label_create(g_page_base);
     lv_obj_set_style_text_font(g_label_hint, &BUILTIN_TEXT_FONT, 0);
     lv_obj_set_style_text_color(g_label_hint, COLOR(0x666688), 0);
@@ -286,6 +326,7 @@ void display_show_connecting(void) {
 }
 
 void display_show_wifi_config(const char *ap_ssid) {
+    if (ap_ssid) strncpy(g_ap_ssid, ap_ssid, sizeof(g_ap_ssid)-1);
     if (!g_initialized) return;
     take_lock();
     close_base_page();
@@ -293,22 +334,25 @@ void display_show_wifi_config(const char *ap_ssid) {
     lv_obj_set_style_bg_color(g_screen, COLOR(0x1a1a2e), 0);
     lv_label_set_text(g_status_label, "AuthStick");
     lv_obj_set_style_text_color(g_status_label, COLOR(0x888899), 0);
+    make_icon(g_page_base);
     g_label_code = lv_label_create(g_page_base);
     lv_obj_set_style_text_font(g_label_code, &BUILTIN_TEXT_FONT, 0);
     lv_obj_set_style_text_color(g_label_code, COLOR(0x4ade80), 0);
     lv_obj_set_style_text_align(g_label_code, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(g_label_code, W - 32);
+    lv_obj_set_width(g_label_code, W - 12);
     lv_label_set_long_mode(g_label_code, LV_LABEL_LONG_WRAP);
-    char buf[64]; snprintf(buf, sizeof(buf), "\xe8\xaf\xb7\xe8\xbf\x9e\xe6\x8e\xa5\xe7\x83\xad\xe7\x82\xb9 %s", ap_ssid);
+    const char *tmpl = t("\xe8\xaf\xb7\xe8\xbf\x9e\xe6\x8e\xa5\xe7\x83\xad\xe7\x82\xb9 %s", "Connect to %s");
+    char buf[64]; snprintf(buf, sizeof(buf), tmpl, ap_ssid);
     lv_label_set_text(g_label_code, buf);
     lv_obj_center(g_label_code);
     g_label_sub = lv_label_create(g_page_base);
     lv_obj_set_style_text_font(g_label_sub, &BUILTIN_TEXT_FONT, 0);
     lv_obj_set_style_text_color(g_label_sub, COLOR(0x888899), 0);
     lv_obj_set_style_text_align(g_label_sub, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(g_label_sub, W - 32);
+    lv_obj_set_width(g_label_sub, W - 12);
     lv_label_set_long_mode(g_label_sub, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(g_label_sub, "\xe5\xb9\xb6\xe8\xae\xbf\xe9\x97\xae" "192.168.4.1\xe9\x85\x8d\xe7\xbd\xaeWifi\xe5\x92\x8c\xe8\xae\xa4\xe8\xaf\x81\xe6\x9c\x8d\xe5\x8a\xa1\xe5\x9c\xb0\xe5\x9d\x80");
+    lv_label_set_text(g_label_sub, t("\xe8\xae\xbf\xe9\x97\xae" " 192.168.4.1 \xe9\x85\x8d\xe7\xbd\xaeWifi\xe5\x92\x8c\xe8\xae\xa4\xe8\xaf\x81\xe6\x9c\x8d\xe5\x8a\xa1\xe5\x9c\xb0\xe5\x9d\x80",
+        "Visit 192.168.4.1 to configure WiFi and auth server"));
     lv_obj_align_to(g_label_sub, g_label_code, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
     g_label_hint = lv_label_create(g_page_base);
     lv_obj_set_style_text_font(g_label_hint, &BUILTIN_TEXT_FONT, 0);
@@ -320,26 +364,36 @@ void display_show_wifi_config(const char *ap_ssid) {
 
 void display_show_code(const char *code, const char *service, int expires_in) {
     if (!g_initialized || g_overlay_page != OVERLAY_NONE) return;
+    if (code) { strncpy(g_last_code, code, 7); g_last_code[7] = 0; }
+    if (service) { strncpy(g_last_service, service, 31); g_last_service[31] = 0; }
+    g_last_expires = expires_in;
     g_state = AUTH_STATE_PENDING;
     take_lock();
     close_base_page();
     make_base_page();
+    lv_obj_set_style_bg_color(g_page_base, COLOR(0x1a1a2e), 0);
+    lv_obj_set_style_bg_opa(g_page_base, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(g_screen, COLOR(0x1a1a2e), 0);
+    make_icon(g_page_base);
 
-    const char *svc = (service && strcmp(service, "RegCode") == 0) ? t("\xe6\xb3\xa8\xe5\x86\x8c\xe7\xa0\x81", "RegCode") : service;
-    if (svc && svc[0]) {
-        lv_label_set_text(g_status_label, svc);
-        lv_obj_set_style_text_color(g_status_label, COLOR(0x888899), 0);
+    // Status bar shows "验证码" for login, "注册码" for registration
+    bool is_reg = (service && strcmp(service, "RegCode") == 0);
+    lv_label_set_text(g_status_label, t("\xe9\xaa\x8c\xe8\xaf\x81\xe7\xa0\x81", "Code"));
+    lv_obj_set_style_text_color(g_status_label, COLOR(0x888899), 0);
+    if (is_reg) {
+        lv_label_set_text(g_status_label, t("\xe6\xb3\xa8\xe5\x86\x8c\xe7\xa0\x81", "RegCode"));
+        lv_obj_set_style_text_color(g_status_label, COLOR(0x4ade80), 0);
     }
 
     g_label_code = lv_label_create(g_page_base);
     lv_obj_set_style_text_font(g_label_code, &font_digits_30_4, 0);
     lv_obj_set_style_text_color(g_label_code, COLOR(0xffffff), 0);
     lv_obj_set_style_text_align(g_label_code, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(g_label_code, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_bottom(g_label_code, 6, 0);
     lv_label_set_text(g_label_code, code);
-    lv_obj_center(g_label_code);
+    lv_obj_align(g_label_code, LV_ALIGN_CENTER, 0, -20);
 
+    lv_obj_t *last = g_label_code;
     if (expires_in > 0) {
         time_t et = time(NULL) + expires_in;
         struct tm tm; localtime_r(&et, &tm);
@@ -354,6 +408,17 @@ void display_show_code(const char *code, const char *service, int expires_in) {
             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
         lv_label_set_text(g_label_sub, buf);
         lv_obj_align_to(g_label_sub, g_label_code, LV_ALIGN_OUT_BOTTOM_MID, 0, 8);
+        last = g_label_sub;
+    }
+
+    // Device name below expiry (login codes only)
+    if (!is_reg && service && service[0]) {
+        lv_obj_t *dn_label = lv_label_create(g_page_base);
+        lv_obj_set_style_text_font(dn_label, &BUILTIN_TEXT_FONT, 0);
+        lv_obj_set_style_text_color(dn_label, COLOR(0xccccdd), 0);
+        lv_obj_set_style_text_align(dn_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_text(dn_label, service);
+        lv_obj_align_to(dn_label, last, LV_ALIGN_OUT_BOTTOM_MID, 0, 8);
     }
 
     g_label_hint = lv_label_create(g_page_base);
@@ -374,6 +439,14 @@ void display_show_result(auth_ui_state_t result) {
     if (result == AUTH_STATE_APPROVED) {
         lv_obj_set_style_bg_color(g_screen, COLOR(0x006000), 0);
         lv_label_set_text(g_status_label, t("\xe5\xb7\xb2\xe6\x89\xb9\xe5\x87\x86", "Approved"));
+        g_label_code = lv_label_create(g_page_base);
+        lv_obj_set_style_text_font(g_label_code, &BUILTIN_TEXT_FONT, 0);
+        lv_obj_set_style_text_color(g_label_code, COLOR(0xcccccc), 0);
+        lv_obj_set_style_text_align(g_label_code, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_width(g_label_code, W - 32);
+        lv_label_set_long_mode(g_label_code, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(g_label_code, t("\xe8\xaf\xb7\xe7\xa8\x8d\xe7\xad\x89\xef\xbc\x8c\xe6\xad\xa3\xe5\x9c\xa8\xe8\x8e\xb7\xe5\x8f\x96\xe9\xaa\x8c\xe8\xaf\x81\xe7\xa0\x81\xe2\x80\xa6", "Please wait, fetching code..."));
+        lv_obj_center(g_label_code);
     } else {
         lv_obj_set_style_bg_color(g_screen, COLOR(0x800000), 0);
         lv_label_set_text(g_status_label, t("\xe5\xb7\xb2\xe6\x8b\x92\xe7\xbb\x9d", "Denied"));
@@ -402,11 +475,21 @@ void display_show_banned(const char *mac, const char *name) {
     lv_obj_set_width(g_label_code, W - 32);
     char buf[128];
     snprintf(buf, sizeof(buf), t(
-        "\xe4\xbd\xa0\xe5\xb7\xb2\xe8\xa2\xab\xe5\xb0\x81\xe7\xa6\x81\n\xe8\xae\xbe\xe5\xa4\x87: %s\nMAC: %s",
-        "You have been banned\nDevice: %s\nMAC: %s"), name ? name : mac, mac);
+        "\xe4\xbd\xa0\xe5\xb7\xb2\xe8\xa2\xab\xe5\xb0\x81\xe7\xa6\x81\n\xe8\xae\xbe\xe5\xa4\x87\xe5\x90\x8d: %s\nMAC: %s",
+        "You have been banned\nDevice Name: %s\nMAC: %s"), name ? name : mac, mac);
     lv_label_set_text(g_label_code, buf);
     lv_obj_center(g_label_code);
+    g_label_hint = lv_label_create(g_page_base);
+    lv_obj_set_style_text_font(g_label_hint, &BUILTIN_TEXT_FONT, 0);
+    lv_obj_set_style_text_color(g_label_hint, COLOR(0x666688), 0);
+    lv_label_set_text(g_label_hint, t("A:\xe7\x86\x84\xe5\xb1\x8f  B:\xe8\x8f\x9c\xe5\x8d\x95", "A:Screen  B:Menu"));
+    lv_obj_align(g_label_hint, LV_ALIGN_BOTTOM_MID, 0, -4);
     give_lock();
+}
+
+void display_show_token_error(void) {
+    display_show_error(t("\xe6\xb3\xa8\xe5\x86\x8c\xe5\xa4\xb1\xe8\xb4\xa5\n\xe8\xaf\xb7\xe8\x81\x94\xe7\xb3\xbb\xe7\xae\xa1\xe7\x90\x86\xe5\x91\x98\xe9\x87\x8d\xe7\xbd\xae\xe5\x90\x8e\xe9\x87\x8d\xe5\x90\xaf",
+        "Reg failed\nContact admin to reset token & reboot"));
 }
 
 void display_show_error(const char *msg) {
@@ -468,6 +551,12 @@ void display_draw_status_bar(void) {
 // ── Init ──────────────────────────────────────────────
 
 void display_init(void) {
+    nvs_handle_t nvs;
+    if (nvs_open("wifi", NVS_READONLY, &nvs) == ESP_OK) {
+        uint8_t lang = 0;
+        if (nvs_get_u8(nvs, "lang_en", &lang) == ESP_OK) g_lang_en = (lang != 0);
+        nvs_close(nvs);
+    }
     ledc_timer_config_t bl_timer = {
         .speed_mode = LEDC_LOW_SPEED_MODE, .duty_resolution = LEDC_TIMER_8_BIT,
         .timer_num = LEDC_TIMER_0, .freq_hz = 5000, .clk_cfg = LEDC_USE_RC_FAST_CLK,

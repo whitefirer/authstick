@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="AuthStick — ESP32 硬件认证终端。每台设备独立 MAC 地址，验证码精准送达设备屏幕，网页输入验证。">
+<meta name="description" content="AuthStick — ESP32 硬件认证终端。物理隔离的硬件令牌，设备屏幕持续显示验证码，网页输入即验证。">
 <title>AuthStick — 独立认证终端</title>
 <style>
 :root {
@@ -50,6 +50,8 @@ body{-webkit-font-smoothing:antialiased}
 }
 
 /* hero */
+.hero-icon{width:80px;height:80px;margin:0 auto 24px;display:block}
+.hero-icon svg{width:100%;height:100%}
 .hero{
   padding:clamp(60px,10vw,120px) 0 clamp(40px,6vw,80px);
   text-align:center;
@@ -237,12 +239,14 @@ footer a:hover{text-decoration:underline}
 <!-- ── hero ───────────────────────── -->
 <section class="hero">
   <div class="section-inner">
+    <div class="hero-icon">
+      <img src="authstick-icon.svg" alt="AuthStick" width="80" height="80">
+    </div>
     <span class="hero-badge">M5Stack StickS3 · ESP32-S3</span>
-    <h1>每台设备独立 MAC 地址<br><em>验证码精准送达，网页输入验证</em></h1>
+    <h1>物理隔离的硬件认证<br><em>设备屏幕显示验证码，网页输入即通过</em></h1>
     <p class="lead">
-      打开登录页的瞬间，服务器将验证码推送到你的 StickS3 屏幕。
-      在设备上查看验证码，直接在网页输入提交——物理隔离，
-      代码只出现在对的设备上。
+      StickS3 持续显示 6 位验证码，打开登录页直接输入即可。
+      设备独立令牌加密通信，验证码仅出现在你的设备屏幕上——物理隔离，不可远程截获。
     </p>
   </div>
 </section>
@@ -253,19 +257,19 @@ footer a:hover{text-decoration:underline}
     <h2>传统认证的三大痛点</h2>
     <div class="problem-grid">
       <div class="problem-card">
-        <div class="label">TTS 泄露</div>
-        <h3>语音念出验证码</h3>
-        <p>语音助手通过 TTS 播报验证码，周围任何人都能听到。配合屏幕显示的验证流程被语音通道彻底打破。</p>
+        <div class="label">通道风险</div>
+        <h3>短信/邮件被截获</h3>
+        <p>验证码走公共通道——短信延迟、邮件泄露、SIM 卡克隆。通道不可控，代码安全性无法保证。</p>
       </div>
       <div class="problem-card">
-        <div class="label">操作繁琐</div>
-        <h3>切窗口手动输入</h3>
-        <p>看到验证码 → 记住 → 切回网页 → 输入。6 位码来回切换三次，流程断裂、易输错。</p>
+        <div class="label">同机认证</div>
+        <h3>TOTP 与登录同设备</h3>
+        <p>手机运行 Authenticator App，登录也在手机上——"你拥有的东西"和"你操作的东西"变成同一台机器，二因子形同虚设。</p>
       </div>
       <div class="problem-card">
-        <div class="label">设备混用</div>
-        <h3>多设备无隔离</h3>
-        <p>多个终端共享同一套认证系统时，验证码出现在谁的屏幕上？没有设备级身份，验证来源不可追溯。</p>
+        <div class="label">缺乏身份</div>
+        <h3>硬件 Token 无设备标识</h3>
+        <p>通用 FIDO Key 只证明"我持有密钥"，不能区分是哪把 Key。多设备环境下无法追踪、无法封禁、无法审计。</p>
       </div>
     </div>
   </div>
@@ -277,16 +281,16 @@ footer a:hover{text-decoration:underline}
     <h2>三步完成认证</h2>
     <div class="flow-steps">
       <div class="flow-step">
-        <h3>网页请求验证码</h3>
-        <p>用户打开登录页面，AuthStick 服务端生成 4 位数字验证码。</p>
+        <h3>StickS3 主动获取验证码</h3>
+        <p>设备定时向服务端请求 6 位验证码并显示在屏幕上，5 分钟有效，过期自动刷新。登录页无需创建，设备即入口。</p>
       </div>
       <div class="flow-step">
-        <h3>Stick 轮询显示</h3>
-        <p>StickS3 每 3 秒轮询服务端，带上自己的 MAC 地址。服务端返回验证码到对应设备屏幕。</p>
+        <h3>打开登录页面</h3>
+        <p>在任意设备上打开登录页面，无需注册账号、无需邮箱——页面只有一个输入框。</p>
       </div>
       <div class="flow-step">
-        <h3>网页输入 · 即时验证</h3>
-        <p>在设备上查看验证码，回到网页输入提交。验证通过后自动跳转登录。</p>
+        <h3>输入验证码 · 即时通过</h3>
+        <p>将 StickS3 屏幕上的验证码输入网页，提交验证。设备即身份，物理隔离，无法远程截获。</p>
       </div>
     </div>
   </div>
@@ -298,24 +302,24 @@ footer a:hover{text-decoration:underline}
     <h2>核心特性</h2>
     <div class="features-grid">
       <div class="feature-card">
-        <div class="icon">🛡️</div>
-        <h3>设备注册机制</h3>
-        <p>首次使用需在管理后台输入验证码绑定设备 MAC，未注册设备无法接收验证码，物理地址天然防冒用。</p>
+        <div class="icon">🔑</div>
+        <h3>设备令牌 · 不可伪造</h3>
+        <p>每台设备独立生成加密令牌，注册时通过一次性注册码绑定。令牌绝不出现在任何服务端响应中，无法通过伪装MAC地址获取令牌。</p>
       </div>
       <div class="feature-card">
         <div class="icon">📡</div>
-        <h3>WiFi 扫码配网</h3>
-        <p>首次开机自动开启热点，手机连接即可在网页中配置 WiFi 和服务器地址。无需编译、无需串口。</p>
+        <h3>热点配网 · 零代码</h3>
+        <p>首次开机自动创建 AuthStick 热点，手机连接后在 192.168.4.1 配置 WiFi 和认证服务地址。无需装驱动、不用连串口。</p>
       </div>
       <div class="feature-card">
-        <div class="icon">⚡</div>
-        <h3>有效期倒计时</h3>
-        <p>验证码 5 分钟有效，屏幕显示精确过期时刻。超时自动刷新。</p>
+        <div class="icon">⏱️</div>
+        <h3>主动获取 · 自动刷新</h3>
+        <p>设备定时向服务端获取 6 位验证码，5 分钟有效，显示精确过期时刻。到期自动刷新，无需任何操作。</p>
       </div>
       <div class="feature-card">
-        <div class="icon">🔌</div>
-        <h3>独立认证服务</h3>
-        <p>内置完整 HTTP 服务器，不依赖任何第三方。任何网页接入 3 个 API 即可对接认证。</p>
+        <div class="icon">🛡️</div>
+        <h3>管理后台 · 全链路可控</h3>
+        <p>设备命名、封禁、移除、重置令牌——管理员拥有完整控制权。被封设备立即失效，令牌可随时重置。</p>
       </div>
     </div>
   </div>
@@ -385,8 +389,11 @@ function setProgress(pct, label) {
   if (label) document.getElementById('progressLabel').textContent = label;
 }
 
-// Preload merged firmware
-(async () => {
+// Load firmware on demand
+async function loadFirmware() {
+  if (fwReady) return true;
+  document.getElementById('flashBtn').disabled = true;
+  document.getElementById('flashBtn').textContent = '加载中...';
   try {
     const resp = await fetch(FW_URL);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -408,13 +415,19 @@ function setProgress(pct, label) {
     sl.onmouseleave = function(){ if(sl.style.color === 'var(--ink)') sl.style.color = 'var(--muted)'; };
     document.getElementById('flashBtn').disabled = false;
     document.getElementById('flashBtn').textContent = '开始烧录';
+    return true;
   } catch(e) {
     document.getElementById('fwInfo').textContent = '加载失败，请手动下载';
     log('固件加载失败: ' + e.message, 'err');
     document.getElementById('flashBtn').disabled = false;
-    document.getElementById('flashBtn').textContent = '开始烧录';
+    document.getElementById('flashBtn').textContent = '重试';
+    return false;
   }
-})();
+}
+
+// Enable button once JS is ready
+document.getElementById('flashBtn').disabled = false;
+document.getElementById('flashBtn').textContent = '开始烧录';
 
 // Fallback: manual download
 window.downloadFw = function() {
@@ -439,7 +452,8 @@ window.onLocalFile = async function(e) {
 
 // Combined: connect then flash
 window.doFlash = async function() {
-  if (!fwReady || !fwData) { log('固件尚未加载', 'err'); return; }
+  if (!fwReady && !(await loadFirmware())) return;
+  if (!fwData) { log('固件尚未加载', 'err'); return; }
 
   const btn = document.getElementById('flashBtn');
   btn.disabled = true;
