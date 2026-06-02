@@ -21,12 +21,21 @@ jobs:
           target: esp32s3
           path: firmware
           command: |
-            # Force 8MB flash so app partition is big enough
+            # Custom partition: max space for app
+            cat > partitions.csv << 'CSV'
+            nvs,      data, nvs,     0x9000,  0x6000,
+            phy_init, data, phy,     0xF000,  0x1000,
+            factory,  app,  factory, 0x10000, 0x7A0000,
+            CSV
+            echo "CONFIG_PARTITION_TABLE_CUSTOM=y" >> sdkconfig.defaults
+            echo "CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=\"partitions.csv\"" >> sdkconfig.defaults
+            echo "CONFIG_PARTITION_TABLE_FILENAME=\"partitions.csv\"" >> sdkconfig.defaults
             echo "CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y" >> sdkconfig.defaults
-            echo "CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y" >> sdkconfig.defaults
             idf.py build
             mkdir -p ../dist
-            esptool.py --chip esp32s3 merge_bin -o ../dist/authstick-merged.bin @build/flash_args
+            cp build/authstick.bin ../dist/
+            cd build
+            esptool.py --chip esp32s3 merge_bin --flash_mode dio --flash_size 8MB --flash_freq 80m -o ../../dist/authstick-merged.bin 0x0 bootloader/bootloader.bin 0x8000 partition_table/partition-table.bin 0x10000 authstick.bin
 
       - name: Checksums
         run: |
