@@ -21,6 +21,9 @@ jobs:
           target: esp32s3
           path: firmware
           command: |
+            # Force 8MB flash so app partition is big enough
+            echo "CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y" >> sdkconfig.defaults
+            echo "CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y" >> sdkconfig.defaults
             idf.py build
             mkdir -p ../dist
             cd build
