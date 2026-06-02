@@ -10,42 +10,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Install ESP-IDF
-        run: |
-          git clone --depth 1 --branch v5.5 --recurse-submodules --shallow-submodules https://github.com/espressif/esp-idf.git ~/esp-idf
-
-      - name: Install ESP-IDF tools
-        run: |
-          ~/esp-idf/install.sh esp32s3
 
       - name: Build firmware
-        run: |
-          . ~/esp-idf/export.sh
-          cd firmware
-          pip install --user idf-component-manager
-          idf.py set-target esp32s3
-          idf.py build
+        uses: espressif/esp-idf-ci-action@v2
+        with:
+          esp_idf_version: v5.5
+          target: esp32s3
+          path: firmware
+          command: |
+            pip install idf-component-manager
+            idf.py build
 
       - name: Merge firmware
         run: |
-          . ~/esp-idf/export.sh
-          cd firmware
-          mkdir -p ../web-flash
+          pip install esptool
+          mkdir -p web-flash
           python -m esptool --chip esp32s3 merge_bin \
-            -o ../web-flash/authstick-merged.bin \
+            -o web-flash/authstick-merged.bin \
             --flash_mode dio --flash_size 8MB --flash_freq 80m \
-            0x0 build/bootloader/bootloader.bin \
-            0x8000 build/partition_table/partition-table.bin \
-            0x10000 build/authstick.bin
-          echo "SHA256=$(sha256sum ../web-flash/authstick-merged.bin | awk '{print $1}')" >> $GITHUB_ENV
+            0x0 firmware/build/bootloader/bootloader.bin \
+            0x8000 firmware/build/partition_table/partition-table.bin \
+            0x10000 firmware/build/authstick.bin
+          sha256sum web-flash/authstick-merged.bin
 
-      - name: Upload firmware to Release
+      - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           files: web-flash/authstick-merged.bin
           body: |
-            Automated build from tag ${{ github.ref_name }}
-            SHA256: ${{ env.SHA256 }}
+            Automated build from ${{ github.ref_name }}
+            Firmware: authstick-merged.bin
