@@ -5,40 +5,36 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build firmware
+      - name: Build firmware and merged image
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.5.2
+          esp_idf_version: v5.5.1
           target: esp32s3
           path: firmware
           command: |
-            pip install idf-component-manager
-            idf.py build 2>&1 || true
-            # Ignore partition size check failure, merge anyway
-            test -f build/authstick.bin
+            idf.py build
+            mkdir -p ../dist
+            cd build
+            esptool.py --chip esp32s3 merge_bin -o ../../dist/authstick-merged.bin @flash_args
 
-      - name: Merge firmware
+      - name: Checksums
         run: |
-          pip install esptool
-          mkdir -p web-flash
-          python -m esptool --chip esp32s3 merge_bin \
-            -o web-flash/authstick-merged.bin \
-            --flash_mode dio --flash_size 8MB --flash_freq 80m \
-            0x0 firmware/build/bootloader/bootloader.bin \
-            0x8000 firmware/build/partition_table/partition-table.bin \
-            0x10000 firmware/build/authstick.bin
-          sha256sum web-flash/authstick-merged.bin
+          cd dist
+          sha256sum authstick-merged.bin > authstick-merged.bin.sha256
+          cat authstick-merged.bin.sha256
 
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
-          files: web-flash/authstick-merged.bin
+          files: dist/authstick-merged.bin
           body: |
             Automated build from ${{ github.ref_name }}
-            Firmware: authstick-merged.bin
+            SHA256: see attached .sha256 file
