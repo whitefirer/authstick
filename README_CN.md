@@ -1,6 +1,7 @@
 # AuthStick
 
-ESP32-S3 物理认证终端。6 位验证码显示在设备屏幕上，网页输入即验证。独立令牌加密通信，无法通过 MAC 地址伪造。
+ESP32-S3 物理认证终端。6 位验证码显示在设备屏幕上，网页输入即验证。独立令牌加密通信，无法通过 MAC 地址伪造。  
+[English](README.md) · [Blog](https://whitefirer.org) · [GitHub](https://github.com/whitefirer/authstick)
 
 ## 为什么用 AuthStick
 

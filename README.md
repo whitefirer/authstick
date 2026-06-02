@@ -1,7 +1,8 @@
 # AuthStick
 
-ESP32-S3 physical authentication terminal. 4-digit codes displayed on screen,
-physical buttons for approve/deny. No LLM, no voice — pure hardware auth.
+ESP32-S3 physical authentication terminal. 6-digit codes displayed on screen,
+independent token encryption, MAC-based spoofing impossible. No LLM, no voice — pure hardware auth.  
+[简体中文](README_CN.md) · [Blog](https://whitefirer.org) · [GitHub](https://github.com/whitefirer/authstick)
 
 ## Why
 
