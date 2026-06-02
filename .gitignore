@@ -5,9 +5,10 @@ firmware/sdkconfig
 firmware/sdkconfig.old
 firmware/dependencies.lock
 
-# Merged binary
+# Merged binary (except web-flash for Pages deployment)
 authstick-merged.bin
 *.bin
+!web-flash/authstick-merged.bin
 
 # Python
 __pycache__/

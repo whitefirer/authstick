@@ -42,6 +42,17 @@ jobs:
       - name: Fix permissions
         run: sudo chown -R $(id -u):$(id -g) dist
 
+      - name: Copy firmware to web-flash
+        run: |
+          cp dist/authstick-merged.bin web-flash/authstick-merged.bin
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -f web-flash/authstick-merged.bin
+          git diff --cached --quiet || git commit -m "release: update firmware binary (${{ github.ref_name }})"
+
+      - name: Push to master
+        run: git push origin master
+
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/authstick-merged.bin
