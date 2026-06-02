@@ -17,7 +17,7 @@ jobs:
       - name: Build firmware and merged image
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.5.1
+          esp_idf_version: v5.5.2
           target: esp32s3
           path: firmware
           command: |
