@@ -17,7 +17,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v4
-      - run: mkdir -p _site && cp -r web-flash/* _site/
+      - name: Download latest firmware from Release
+        run: |
+          curl -sL https://github.com/whitefirer/authstick/releases/latest/download/authstick-merged.bin -o web-flash/authstick-merged.bin || echo "No release firmware yet, using local fallback"
+          mkdir -p _site && cp -r web-flash/* _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
