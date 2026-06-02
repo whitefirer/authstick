@@ -1,6 +1,7 @@
 # AuthStick Project
 
 ESP32-S3 firmware + web flash tool + Python auth backend.
+StickS3 firmware development covered by `sticks3-dev` skill.
 
 ## Quick Start
 
