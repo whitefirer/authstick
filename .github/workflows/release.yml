@@ -26,8 +26,7 @@ jobs:
             echo "CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y" >> sdkconfig.defaults
             idf.py build
             mkdir -p ../dist
-            cd build
-            esptool.py --chip esp32s3 merge_bin -o ../../dist/authstick-merged.bin @flash_args
+            esptool.py --chip esp32s3 merge_bin -o ../dist/authstick-merged.bin @build/flash_args
 
       - name: Checksums
         run: |
