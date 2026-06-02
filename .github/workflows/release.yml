@@ -39,14 +39,14 @@ jobs:
 
       - name: Checksums
         run: |
-          chmod -R u+w dist 2>/dev/null || true
-          cd dist
-          sha256sum authstick-merged.bin > authstick-merged.bin.sha256
-          cat authstick-merged.bin.sha256
+          sha256sum dist/authstick-merged.bin > /tmp/checksum.txt
+          cat /tmp/checksum.txt
+
+      - name: Fix permissions
+        run: sudo chown -R $(id -u):$(id -g) dist
 
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/authstick-merged.bin
           body: |
             Automated build from ${{ github.ref_name }}
-            SHA256: see attached .sha256 file
