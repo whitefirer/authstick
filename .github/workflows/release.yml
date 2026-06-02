@@ -39,6 +39,7 @@ jobs:
 
       - name: Checksums
         run: |
+          chmod -R u+w dist 2>/dev/null || true
           cd dist
           sha256sum authstick-merged.bin > authstick-merged.bin.sha256
           cat authstick-merged.bin.sha256
