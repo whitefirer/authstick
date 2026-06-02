@@ -30,8 +30,8 @@ Typing verification codes or relying on TTS is slow and insecure. This device:
 | LCD CS   | 41 | Chip select |
 | LCD RST  | 21 | Reset |
 | LCD BL   | 38 | Backlight |
-| Button A | 11 | 正面主键 (熄屏/确认) |
-| Button B | 12 | 右侧键 (菜单/返回) |
+| Button A | 11 | Front: confirm / toggle backlight |
+| Button B | 12 | Side: menu / back |
 
 ## Quick Start
 
@@ -60,24 +60,24 @@ Power on → check NVS for WiFi
   │       → admin verifies at /admin → token activated → idle
   └─ No saved WiFi → AP mode (AuthStick-XXXX)
       → phone connects → captive portal at 192.168.4.1
-      → configure WiFi + auth server URL → 完成退出 → reboot
+      → configure WiFi + auth server URL → done → reboot
 ```
 
 ## Captive Portal Tabs
 
 | Tab | Description |
 |-----|-------------|
-| Wi-Fi 配置 | Scan/connect to WiFi, saved networks management |
-| 认证服务 | Set auth server URL (default: sdkconfig CONFIG_AUTH_SERVER_URL) |
-| 高级选项 | OTA URL, TX power, BSSID, sleep mode |
+| WiFi Config | Scan/connect to WiFi, saved networks management |
+| Auth Server | Set auth server URL (default: sdkconfig CONFIG_AUTH_SERVER_URL) |
+| Advanced | OTA URL, TX power, BSSID, sleep mode |
 
 ## WiFi + Auth Config Flow
 
 1. Device boots without WiFi → AP `AuthStick-XXXX` appears
 2. Phone connects to AP → captive portal at `192.168.4.1`
 3. **Wi-Fi tab**: select and connect to WiFi
-4. WiFi configured → done page → "配置认证服务" → Auth tab
-5. **Auth tab**: set server URL (saved to NVS) → "完成退出"
+4. WiFi configured → done page → "Set up auth server" → Auth tab
+5. **Auth tab**: set server URL (saved to NVS) → "Done, restart"
 6. Device reboots → connects WiFi → registers with auth server
 
 ## Architecture
