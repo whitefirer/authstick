@@ -15,23 +15,23 @@ jobs:
 
       - name: Install ESP-IDF
         run: |
-          git clone --depth 1 --branch v5.5 https://github.com/espressif/esp-idf.git ~/esp-idf
-          cd ~/esp-idf && git submodule update --init --depth 1 components/bt/host/nimble/nimble components/esp_wifi/lib components/esptool_py/esptool components/lwip/lwip components/mbedtls/mbedtls components/mbedtls/mbedtls/3rdparty components/esp_driver_i2c components/esp_driver_gpio components/esp_driver_spi components/soc/esp32s3
+          git clone --depth 1 --branch v5.5 --recurse-submodules --shallow-submodules https://github.com/espressif/esp-idf.git ~/esp-idf
+
+      - name: Install ESP-IDF tools
+        run: |
+          ~/esp-idf/install.sh esp32s3
 
       - name: Build firmware
         run: |
-          source ~/esp-idf/export.sh
+          . ~/esp-idf/export.sh
           cd firmware
-          # Install component dependencies
-          python -m pip install idf-component-manager
+          pip install --user idf-component-manager
           idf.py set-target esp32s3
-          # Download components
-          idf.py reconfigure
           idf.py build
 
       - name: Merge firmware
         run: |
-          source ~/esp-idf/export.sh
+          . ~/esp-idf/export.sh
           cd firmware
           mkdir -p ../web-flash
           python -m esptool --chip esp32s3 merge_bin \
