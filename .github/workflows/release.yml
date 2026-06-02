@@ -36,11 +36,8 @@ jobs:
             cp build/authstick.bin ../dist/
             cd build
             esptool.py --chip esp32s3 merge_bin --flash_mode dio --flash_size 8MB --flash_freq 80m -o ../../dist/authstick-merged.bin 0x0 bootloader/bootloader.bin 0x8000 partition_table/partition-table.bin 0x10000 authstick.bin
-
-      - name: Checksums
-        run: |
-          sha256sum dist/authstick-merged.bin > /tmp/checksum.txt
-          cat /tmp/checksum.txt
+            cd ../..
+            sha256sum dist/authstick-merged.bin
 
       - name: Fix permissions
         run: sudo chown -R $(id -u):$(id -g) dist
